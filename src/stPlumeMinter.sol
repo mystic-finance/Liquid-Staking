@@ -60,17 +60,15 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         for (uint256 i = 0; i < numVals; i++) {
             validatorId = validators[i].validatorId;
             if(validatorId == 0) break;
-            
-            // Check capacity
             (bool active, , , ) = plumeStaking.getValidatorStats(uint16(validatorId));
-                
+
             if (!active) continue;
-            
             (PlumeStakingStorage.ValidatorInfo memory info,uint256 totalStaked , ) = plumeStaking.getValidatorInfo(uint16(validatorId));
                 
             if (info.maxCapacity != 0 || totalStaked < info.maxCapacity) {
                 return (validatorId, info.maxCapacity - totalStaked);
             }
+
             if(info.maxCapacity == 0){
                 return (validatorId, type(uint256).max-1);
             }
@@ -154,8 +152,9 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     }
 
     /// @notice Withdraw withheld ETH
-    function withdrawWithheld() external nonReentrant onlyByOwnGov returns (uint256 amount) {
+    function withdrawFee() external nonReentrant onlyByOwnGov returns (uint256 amount) {
         _rebalance();
+        address(owner).call{value: withHoldEth}("");
         amount = withHoldEth;
         withHoldEth = 0;
         return amount;
@@ -185,8 +184,9 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         withdrawn = withdrawn>amount ? withdrawn :amount; //fees could be taken by staker contract so that less than requested amount is sent
         uint256 withholdFee = amount * WITHHOLD_FEE / 10000;
         currentWithheldETH += withdrawn - amount ; //keep the rest of the funds for the rest of users that might have unstaked to avoid gas loss to unstake, withdraw but fees are taken by staker too so recognize that
+        uint256 cachedAmount = withdrawn>amount ? amount :withdrawn;
         amount -= withholdFee;
-        withHoldEth += withholdFee;
+        withHoldEth += cachedAmount - amount;
 
         address(recipient).call{value: amount}(""); //send amount to user
         emit Withdrawn(msg.sender, amount);
@@ -258,31 +258,23 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         // Initial pause check
         require(!depositEtherPaused, "Depositing ETH is paused");
         require(_amount > 0, "Amount must be greater than 0");
-        
         uint256 remainingAmount = _amount;
         depositedAmount = 0;
 
         if(remainingAmount < plumeStaking.getMinStakeAmount()){
-            // keep in hand and pool until enough to stake
             currentWithheldETH += remainingAmount;
             return 0;
         }
     
-        // Continue depositing until we've used all the requested amount
         while (remainingAmount > 0) {
             uint256 depositSize = remainingAmount;
-            
-            // Find validator with enough capacity
             (uint256 validatorId, uint256 capacity) = getNextValidator(remainingAmount);
 
             if(capacity < depositSize) {
                 depositSize = capacity;
             }
             
-            // Deposit to the validator
             plumeStaking.stake{value: depositSize}(uint16(validatorId));
-            
-            // Update amounts
             remainingAmount -= depositSize;
             depositedAmount += depositSize;
             
