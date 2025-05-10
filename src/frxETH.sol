@@ -37,7 +37,7 @@ contract frxETH is ERC20PermitPermissionedMint {
       address _creator_address,
       address _timelock_address
     ) 
-    ERC20PermitPermissionedMint(_creator_address, _timelock_address, "Frax Ether", "frxETH") 
+    ERC20PermitPermissionedMint(_creator_address, _timelock_address, "Mystic Staked Plume", "MystPlume") 
     {}
 
 }

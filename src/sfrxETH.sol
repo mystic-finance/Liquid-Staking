@@ -46,7 +46,7 @@ contract sfrxETH is xERC4626, ReentrancyGuard {
 
     /* ========== CONSTRUCTOR ========== */
     constructor(ERC20 _underlying, uint32 _rewardsCycleLength)
-        ERC4626(_underlying, "Staked Frax Ether", "sfrxETH")
+        ERC4626(_underlying, "Wrapped Mystic Staked Plume", "wMystPlume")
         xERC4626(_rewardsCycleLength)
     {}
 

@@ -23,7 +23,7 @@ pragma solidity ^0.8.0;
 // Jamie Turley: https://github.com/jyturley
 
 import { frxETH } from "./frxETH.sol";
-import { IsfrxETH } from "./IsfrxETH.sol";
+import { IsfrxETH } from "./interfaces/IsfrxETH.sol";
 import "openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
 import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { IDepositContract } from "./DepositContract.sol";
@@ -54,9 +54,8 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuard {
         address frxETHAddress, 
         address sfrxETHAddress, 
         address _owner, 
-        address _timelock_address,
-        bytes memory _withdrawalCredential
-    ) OperatorRegistry(_owner, _timelock_address, _withdrawalCredential) {
+        address _timelock_address
+    ) OperatorRegistry(_owner, _timelock_address) {
         depositContract = IDepositContract(depositContractAddress);
         frxETHToken = frxETH(frxETHAddress);
         sfrxETHToken = IsfrxETH(sfrxETHAddress);
@@ -69,7 +68,7 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuard {
         but you might run into msg.sender vs tx.origin issues with the ERC4626 */
     function submitAndDeposit(address recipient) external payable returns (uint256 shares) {
         // Give the frxETH to this contract after it is generated
-        _submit(address(this));
+        _submit(address(this)); 
 
         // Approve frxETH to sfrxETH for staking
         frxETHToken.approve(address(sfrxETHToken), msg.value);
@@ -82,7 +81,7 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuard {
     }
 
     /// @notice Mint frxETH to the recipient using sender's funds. Internal portion
-    function _submit(address recipient) internal nonReentrant {
+    function _submit(address recipient) internal virtual returns (uint256 amount) {
         // Initial pause and value checks
         require(!submitPaused, "Submit is paused");
         require(msg.value != 0, "Cannot submit 0");
@@ -96,6 +95,7 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuard {
             withheld_amt = (msg.value * withholdRatio) / RATIO_PRECISION;
             currentWithheldETH += withheld_amt;
         }
+        amount = msg.value - withheld_amt;
 
         emit ETHSubmitted(msg.sender, recipient, msg.value, withheld_amt);
     }
@@ -111,52 +111,8 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuard {
     }
 
     /// @notice Fallback to minting frxETH to the sender
-    receive() external payable {
+    receive() external payable virtual {
         _submit(msg.sender);
-    }
-
-    /// @notice Deposit batches of ETH to the ETH 2.0 deposit contract
-    /// @dev Usually a bot will call this periodically
-    /// @param max_deposits Used to prevent gassing out if a whale drops in a huge amount of ETH. Break it down into batches.
-    function depositEther(uint256 max_deposits) external nonReentrant {
-        // Initial pause check
-        require(!depositEtherPaused, "Depositing ETH is paused");
-
-        // See how many deposits can be made. Truncation desired.
-        uint256 numDeposits = (address(this).balance - currentWithheldETH) / DEPOSIT_SIZE;
-        require(numDeposits > 0, "Not enough ETH in contract");
-
-        uint256 loopsToUse = numDeposits;
-        if (max_deposits == 0) loopsToUse = numDeposits;
-        else if (numDeposits > max_deposits) loopsToUse = max_deposits;
-
-        // Give each deposit chunk to an empty validator
-        for (uint256 i = 0; i < loopsToUse; ++i) {
-            // Get validator information
-            (
-                bytes memory pubKey,
-                bytes memory withdrawalCredential,
-                bytes memory signature,
-                bytes32 depositDataRoot
-            ) = getNextValidator(); // Will revert if there are not enough free validators
-
-            // Make sure the validator hasn't been deposited into already, to prevent stranding an extra 32 eth
-            // until withdrawals are allowed
-            require(!activeValidators[pubKey], "Validator already has 32 ETH");
-
-            // Deposit the ether in the ETH 2.0 deposit contract
-            depositContract.deposit{value: DEPOSIT_SIZE}(
-                pubKey,
-                withdrawalCredential,
-                signature,
-                depositDataRoot
-            );
-
-            // Set the validator as used so it won't get an extra 32 ETH
-            activeValidators[pubKey] = true;
-
-            emit DepositSent(pubKey, withdrawalCredential);
-        }
     }
 
     /// @param newRatio of ETH that is sent to deposit contract vs withheld, 1e6 precision
@@ -211,7 +167,7 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuard {
     event EmergencyERC20Recovered(address tokenAddress, uint256 tokenAmount);
     event ETHSubmitted(address indexed sender, address indexed recipient, uint256 sent_amount, uint256 withheld_amt);
     event DepositEtherPaused(bool new_status);
-    event DepositSent(bytes indexed pubKey, bytes withdrawalCredential);
+    event DepositSent(uint16 indexed validatorId);
     event SubmitPaused(bool new_status);
     event WithheldETHMoved(address indexed to, uint256 amount);
     event WithholdRatioSet(uint256 newRatio);
