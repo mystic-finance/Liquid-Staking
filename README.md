@@ -163,6 +163,10 @@ No checking for valid validator pubkeys, signatures, etc are done here. They are
 
 # Contest Scope
 
+- stPlume/src/frxETHMinter.sol
+- stPlume/src/stPlumeMinter.sol
+- stPlume/src/OperatorRegistry.sol
+
 - Original frxETH Repository: [https://github.com/FraxFinance/frxETH-public](https://github.com/FraxFinance/frxETH-public)
   -~600 Total sLoC in scope (increased from 365 due to new contracts)
 - Contracts use inheritance, most of the parents are time/battle tested Openzeppelin or other contracts
