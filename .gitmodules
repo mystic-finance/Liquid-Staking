@@ -8,7 +8,7 @@
 	# ignore = dirty
 [submodule "lib/solmate"]
 	path = lib/solmate
-	url = https://github.com/Rari-Capital/solmate
+	url = https://github.com/transmissions11/solmate
 	# ignore = dirty
 [submodule "lib/ERC4626"]
 	path = lib/ERC4626
