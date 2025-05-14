@@ -85,6 +85,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     /// @notice Unstake the specified amount from a validator
     function unstake(uint256 amount) external nonReentrant returns (uint256 amountUnstaked) {
         _rebalance();
+        require(amount > 0, "Amount must be greater than 0");
         frxETHToken.minter_burn_from(msg.sender, amount);
         require(withdrawalRequests[msg.sender].amount == 0, "Withdrawal already requested");
         uint256 cooldownTimestamp;
@@ -132,7 +133,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     }
 
     /// @notice Restake from cooling/parked funds to a specific validator
-    function restake(uint16 validatorId) external nonReentrant returns (uint256 amountRestaked) {
+    function restake(uint16 validatorId) external nonReentrant onlyRole(REBALANCER_ROLE) returns (uint256 amountRestaked) {
         _rebalance();
         (PlumeStakingStorage.StakeInfo memory info) = plumeStaking.stakeInfo(address(this));
         amountRestaked = plumeStaking.restake(validatorId, info.cooled + info.parked);
@@ -154,7 +155,8 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     /// @notice Withdraw withheld ETH
     function withdrawFee() external nonReentrant onlyByOwnGov returns (uint256 amount) {
         _rebalance();
-        address(owner).call{value: withHoldEth}("");
+        (bool success,) = address(owner).call{value: withHoldEth}("");
+        require(success, "Withdrawal failed");
         amount = withHoldEth;
         withHoldEth = 0;
         return amount;
@@ -188,7 +190,8 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         amount -= withholdFee;
         withHoldEth += cachedAmount - amount;
 
-        address(recipient).call{value: amount}(""); //send amount to user
+        (bool success,) = address(recipient).call{value: amount}(""); //send amount to user
+        require(success, "Withdrawal failed");
         emit Withdrawn(msg.sender, amount);
         return amount;
     }
@@ -232,15 +235,6 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         return amount;
     }
 
-    /// @notice Claim all available rewards from all tokens and validators
-    function claimAll() external nonReentrant onlyRole(CLAIMER_ROLE)  returns (uint256 totalAmount) {
-        uint256 amounts = plumeStaking.claimAll();
-        currentWithheldETH += amounts;
-        
-        emit AllRewardsClaimed(address(this), totalAmount);
-        return totalAmount;
-    }
-
     /// @notice Get validator statistics
     function getValidatorStats(uint16 validatorId) external view returns (bool active, uint256 commission, uint256 totalStaked, uint256 stakersCount) {
         return plumeStaking.getValidatorStats(validatorId);
@@ -257,11 +251,10 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     function depositEther(uint256 _amount) internal returns (uint256 depositedAmount) {
         // Initial pause check
         require(!depositEtherPaused, "Depositing ETH is paused");
-        require(_amount > 0, "Amount must be greater than 0");
         uint256 remainingAmount = _amount;
         depositedAmount = 0;
 
-        if(remainingAmount < plumeStaking.getMinStakeAmount()){
+        if(remainingAmount < plumeStaking.getMinStakeAmount()){ // the rewards is expected to be less than minStakeAmount, which means address(this).balance is added to currentWithheldETH, almost everytime
             currentWithheldETH += remainingAmount;
             return 0;
         }
@@ -289,7 +282,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         uint256 amount = _claim();
         frxETHToken.minter_mint(address(this), amount);
         frxETHToken.transfer(address(sfrxETHToken), amount);
-        depositEther(address(this).balance);
+        depositEther(amount);
     }
 
     /// @notice Submit ETH to the contract
