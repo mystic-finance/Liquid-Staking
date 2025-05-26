@@ -62,7 +62,6 @@ interface IPlumeStaking {
         address token
     ) external returns (uint256 amount);
     function claim(address token, uint16 validatorId) external returns (uint256 amount);
-    function claimAll() external returns (uint256 totalAmount);
 
     /**
      * @notice Update validator settings
@@ -177,4 +176,10 @@ interface IPlumeStaking {
     ) external view returns (bool active, uint256 commission, uint256 totalStaked, uint256 stakersCount);
 
     function getMinStakeAmount() external view returns (uint256);
+
+    function getTreasury() external view returns (address);
+
+    function claimAll() external returns (uint256[] memory);
+
+    function getRewardTokens() external view returns (address[] memory);
 }

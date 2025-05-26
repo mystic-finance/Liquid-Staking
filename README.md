@@ -182,3 +182,10 @@ No checking for valid validator pubkeys, signatures, etc are done here. They are
 - Not a fork of a popular project
 - Does not use rollups
 - Single-chain only
+
+
+
+forge install https://github.com/transmissions11/solmate@62e0943c013a66b2720255e2651450928f4eed7a
+forge install https://github.com/OpenZeppelin/openzeppelin-contracts@8d908fe2c20503b05f888dd9f702e3fa6fa65840
+forge install https://github.com/foundry-rs/forge-std
+forge install https://github.com/corddry/ERC4626@6cf2bee5d784169acb02cc6ac0489ca197a4f149
