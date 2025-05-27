@@ -235,7 +235,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         return amount;
     }
 
-    function loadRewards() payable external nonReentrant onlyByOwnGov() returns (uint256 amount) {
+    function loadRewards() payable external nonReentrant onlyByOwnGov returns (uint256 amount) {
         amount = msg.value;
         _loadRewards(amount);
         return amount;
@@ -558,7 +558,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         rewardsCycleEnd = uint32(end);
     }
 
-    function setYieldFee(uint256 newFee) external onlyByOwnGov() {
+    function setYieldFee(uint256 newFee) external onlyByOwnGov {
         require(newFee <= 500000, "Yield fee capped at 50%");
         YIELD_FEE = newFee;
     }
@@ -566,20 +566,25 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     function setRedemptionFees(
         uint256 newInstantFee, 
         uint256 newStandardFee
-    ) external onlyByOwnGov() {
+    ) external onlyByOwnGov {
         require(newInstantFee <= 100000 && newStandardFee <= 100000, "Fees too high");
         INSTANT_REDEMPTION_FEE = newInstantFee;
         REDEMPTION_FEE = newStandardFee;
     }
 
-    function setRewardsCycleLength(uint32 newLength) external onlyByOwnGov() {
+    function setRewardsCycleLength(uint32 newLength) external onlyByOwnGov {
         require(newLength >= 1 days && newLength <= 90 days, "Invalid cycle length");
         rewardsCycleLength = newLength;
     }
 
-    function setMinStake(uint256 _minStake) external onlyByOwnGov() {
+    function setMinStake(uint256 _minStake) external onlyByOwnGov {
         require(_minStake >0, "Invalid cycle length");
         minStake = _minStake;
+    }
+
+    function setMaxValidatorPercentage(uint256 _validatorId, uint256 _maxPercentage) external onlyByOwnGov {
+        require(_maxPercentage <= RATIO_PRECISION, "Invalid max percentage");
+        maxValidatorPercentage[_validatorId] = _maxPercentage;
     }
 
     receive() external payable override {
