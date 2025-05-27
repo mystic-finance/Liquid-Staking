@@ -28,6 +28,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     uint32 public lastSync;
     uint32 public rewardsCycleEnd;
     uint192 public lastRewardAmount;
+    uint256 public minStake = 1e16;
     
     struct WithdrawalRequest {
         uint256 amount;
@@ -97,12 +98,14 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     /// @notice Unstake the specified amount from a validator
     function unstake(uint256 amount) external nonReentrant returns (uint256 amountUnstaked) {
         _rebalance();
+        require(amount >= minStake, "not enough to unstake");
         amountUnstaked =  _unstake(amount, false, 0);
         return amountUnstaked;
     }
 
     function unstakeFromValidator(uint256 amount, uint16 validatorId) external nonReentrant returns (uint256 amountUnstaked) {
         _rebalance();
+        require(amount >= minStake, "not enough to unstake");
         amountUnstaked =  _unstake(amount, false, validatorId);
         return amountUnstaked;
     }
@@ -112,9 +115,27 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         _rebalance();
         require(_checkValidator(uint256(validatorId)), "Validator does not exist");
         IPlumeStaking.CooldownView memory cooldown = _getCoolDownPerValidator(uint16(validatorId));
-        amountRestaked = plumeStaking.restake(validatorId, cooldown.amount);
-        emit Restaked(address(this), validatorId, amountRestaked);
-        return amountRestaked;
+        plumeStaking.restake(validatorId, cooldown.amount);
+        emit Restaked(address(this), validatorId, cooldown.amount);
+        return cooldown.amount;
+    }
+
+    function unstakeGov(uint16 validatorId, uint256 amount) external nonReentrant onlyByOwnGov returns (uint256 amountRestaked) {
+        _rebalance();
+        (bool active, ,uint256 stakedAmount,) = plumeStaking.getValidatorStats(uint16(validatorId));
+        PlumeStakingStorage.StakeInfo memory stakeInfo = plumeStaking.stakeInfo(address(this));
+        
+        if (active && stakedAmount > 0 && stakeInfo.staked > 0 && stakeInfo.staked <= stakedAmount && stakeInfo.staked >= amount) {
+            uint256 actualUnstaked = plumeStaking.unstake(uint16(validatorId), amount);
+        }
+    }
+
+    function withdrawGov(uint256 amount) external nonReentrant onlyByOwnGov returns (uint256 amountRestaked) {
+        _rebalance();
+        uint256 balanceBefore = address(this).balance;
+        plumeStaking.withdraw();
+        uint256 balanceAfter = address(this).balance;
+        currentWithheldETH += balanceAfter - balanceBefore;
     }
 
     /// @notice Restake from cooling/parked funds to a specific validator
@@ -150,9 +171,12 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         uint fee;
         request.amount = 0;
         request.timestamp = 0;
+        uint256 balanceBefore = address(this).balance;
 
         if(amount > currentWithheldETH ){
-            withdrawn = plumeStaking.withdraw();
+            plumeStaking.withdraw();
+            uint256 balanceAfter = address(this).balance;
+            withdrawn = balanceAfter - balanceBefore;
             fee = amount * REDEMPTION_FEE / RATIO_PRECISION;
         } else {
             fee = amount * INSTANT_REDEMPTION_FEE / RATIO_PRECISION;
@@ -177,7 +201,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     }
 
     /// @notice Get stake information for a specific user
-    function stakeInfo() external view returns (PlumeStakingStorage.StakeInfo memory) {
+    function stakeInfo() public view returns (PlumeStakingStorage.StakeInfo memory) {
         return plumeStaking.stakeInfo(address(this));
     }
 
@@ -246,18 +270,18 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
 
     function getYield() public view returns (uint256) {
         if (block.timestamp >= rewardsCycleEnd) {
-            return rewardsEth + lastRewardAmount;
+            return rewardsEth;
         }
         uint256 unlockedRewards = (lastRewardAmount * (block.timestamp - lastSync)) / (rewardsCycleEnd - lastSync);
-        return rewardsEth + unlockedRewards;
+        return rewardsEth - lastRewardAmount + unlockedRewards;
     }
 
     function _getSplitYield() internal view returns (uint256, uint256) {
         if (block.timestamp >= rewardsCycleEnd) {
-            return (rewardsEth , lastRewardAmount);
+            return (rewardsEth - lastRewardAmount , lastRewardAmount);
         }
         uint256 unlockedRewards = (lastRewardAmount * (block.timestamp - lastSync)) / (rewardsCycleEnd - lastSync);
-        return (rewardsEth , unlockedRewards);
+        return (rewardsEth - lastRewardAmount , unlockedRewards);
     }
 
     function _loadRewards (uint256 amount) internal {
@@ -266,8 +290,8 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
             yieldEth += amount - yieldAmount;
             withHoldEth += yieldAmount;
             _depositEther(amount - yieldAmount, 0);
-            if (block.timestamp >= rewardsCycleEnd) { syncRewards(); }
         }
+        if (block.timestamp >= rewardsCycleEnd) { syncRewards(); }
     }
 
     function _getValidatorInfo(uint16 validatorId) internal view returns (uint256, uint256 capacity) {
@@ -418,20 +442,22 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
                 uint256 validatorId = validators[index].validatorId;
                 require(validatorId > 0, "Validator does not exist");
                 (bool active, ,uint256 stakedAmount,) = plumeStaking.getValidatorStats(uint16(validatorId));
+                PlumeStakingStorage.StakeInfo memory stakeInfo = plumeStaking.stakeInfo(address(this));
                 
-                if (active && stakedAmount > 0) {
+                if (active && stakedAmount > 0 && stakeInfo.staked > 0 && stakeInfo.staked <= stakedAmount) {
                     // Calculate how much to unstake from this validator
-                    uint256 unstakeFromValidator = remainingToUnstake > stakedAmount ? stakedAmount : remainingToUnstake;
-                    uint256 actualUnstaked = plumeStaking.unstake(uint16(validatorId), unstakeFromValidator);
+                    uint256 unstakeAmountFromValidator = remainingToUnstake > stakeInfo.staked ? stakeInfo.staked : remainingToUnstake;
+                    uint256 actualUnstaked = plumeStaking.unstake(uint16(validatorId), unstakeAmountFromValidator);
                     amountUnstaked += actualUnstaked;
                     remainingToUnstake -= actualUnstaked;
+
+                    uint256 endTime = _getCoolDownPerValidator(uint16(validatorId)).cooldownEndTime;
+                    if(endTime > cooldownTimestamp){ // use the max timestamp as the cooldown timestamp
+                        cooldownTimestamp = endTime;
+                    }
                     if (remainingToUnstake == 0) break;
                 }
                 index++;
-                uint256 endTime = _getCoolDownPerValidator(uint16(validatorId)).cooldownEndTime;
-                if(endTime > cooldownTimestamp){ // use the max timestamp as the cooldown timestamp
-                    cooldownTimestamp = endTime;
-                }
                 require(index <= numVals, "Too many validators checked");
             }
             
@@ -467,6 +493,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         userRewards[msg.sender].rewardsBefore = getYield();
         userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
         amount = super._submit(recipient);
+        require(amount >= minStake, "not enough to stake");
         _depositEther(amount, 0);
     }
 
@@ -476,6 +503,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         userRewards[msg.sender].rewardsBefore = getYield();
         userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
         amount = super._submit(recipient);
+        require(amount >= minStake, "not enough to stake");
         _depositEther(amount, validatorId);
     }
 
@@ -516,7 +544,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         }));
         
         uint256 end = ((timestamp + rewardsCycleLength) / rewardsCycleLength) * rewardsCycleLength;
-        if (end - timestamp < rewardsCycleLength / 20) {
+        if (end - timestamp < rewardsCycleLength) {
             end += rewardsCycleLength;
         }
 
@@ -542,6 +570,11 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     function setRewardsCycleLength(uint32 newLength) external onlyByOwnGov() {
         require(newLength >= 1 days && newLength <= 90 days, "Invalid cycle length");
         rewardsCycleLength = newLength;
+    }
+
+    function setMinStake(uint256 _minStake) external onlyByOwnGov() {
+        require(_minStake >0, "Invalid cycle length");
+        minStake = _minStake;
     }
 
     receive() external payable override {

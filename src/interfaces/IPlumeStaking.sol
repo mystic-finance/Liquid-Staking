@@ -56,13 +56,13 @@ interface IPlumeStaking {
      * @param validatorId ID of the validator to stake to
      * @param amount Amount of tokens to restake (can be 0 to use all available cooling/parked funds)
      */
-    function restake(uint16 validatorId, uint256 amount) external returns (uint256);
+    function restake(uint16 validatorId, uint256 amount) external;
     function stakeOnBehalf(uint16 validatorId, address staker) external payable returns (uint256);
     function unstake(
         uint16 validatorId
     ) external returns (uint256 amount);
     function unstake(uint16 validatorId, uint256 amount) external returns (uint256 amountUnstaked);
-    function withdraw() external returns (uint256 amount);
+    function withdraw() external;
 
     // Reward functions
     function claim(
