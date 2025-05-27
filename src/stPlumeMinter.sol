@@ -72,33 +72,21 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         _setupRole(CLAIMER_ROLE, _owner);
     }
 
+    function submitForValidator(uint16 validatorId) external payable {
+        _submit(msg.sender, validatorId);
+    }
+    
     /// @notice Get the next validator to deposit to
-    function getNextValidator(uint depositAmount) public view returns (uint256 validatorId, uint256 capacity) {
-        // Make sure there are free validators available
-        uint numVals = numValidators();
-        require(numVals != 0, "Validator stack is empty");
+    function getNextValidator(uint depositAmount, uint16 validatorId) public view returns (uint256 validatorId_, uint256 capacity_) {
+        require(validatorId != 0, "Validator does not exist");
+        (bool active, , , ) = plumeStaking.getValidatorStats(uint16(validatorId));
 
-        for (uint256 i = 0; i < numVals; i++) {
-            validatorId = validators[i].validatorId;
-            if(validatorId == 0) break;
-            (bool active, , , ) = plumeStaking.getValidatorStats(uint16(validatorId));
-
-            if (!active) continue;
-            (PlumeStakingStorage.ValidatorInfo memory info,uint256 totalStaked , ) = plumeStaking.getValidatorInfo(uint16(validatorId));
-
-            if(info.maxCapacity == 0){
-                return (validatorId, type(uint256).max-1);
-            }
-
-            if (info.maxCapacity != 0 && totalStaked < info.maxCapacity) {
-                uint remainingAmount = info.maxCapacity - totalStaked;
-                if(remainingAmount >= plumeStaking.getMinStakeAmount()){ // the rewards is expected to be less than minStakeAmount, which means address(this).balance is added to currentWithheldETH, almost everytime
-                    return (validatorId, remainingAmount);
-                }     
-            }
+        if (!active) return (validatorId, 0);
+        (validatorId_, capacity_) = _getValidatorInfo(uint16(validatorId));
+        if(capacity_ > 0){
+            return (validatorId_, capacity_);
         }
-
-        revert("No validator with sufficient capacity");
+        return (validatorId_, 0);
     }
 
     /// @notice Rebalance the contract
@@ -109,7 +97,13 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     /// @notice Unstake the specified amount from a validator
     function unstake(uint256 amount) external nonReentrant returns (uint256 amountUnstaked) {
         _rebalance();
-        amountUnstaked =  _unstake(amount, false);
+        amountUnstaked =  _unstake(amount, false, 0);
+        return amountUnstaked;
+    }
+
+    function unstakeFromValidator(uint256 amount, uint16 validatorId) external nonReentrant returns (uint256 amountUnstaked) {
+        _rebalance();
+        amountUnstaked =  _unstake(amount, false, validatorId);
         return amountUnstaked;
     }
 
@@ -117,9 +111,8 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     function restake(uint16 validatorId) external nonReentrant onlyRole(REBALANCER_ROLE) returns (uint256 amountRestaked) {
         _rebalance();
         require(_checkValidator(uint256(validatorId)), "Validator does not exist");
-        (PlumeStakingStorage.StakeInfo memory info) = plumeStaking.stakeInfo(address(this));
-        amountRestaked = plumeStaking.restake(validatorId, info.cooled + info.parked);
-        
+        IPlumeStaking.CooldownView memory cooldown = _getCoolDownPerValidator(uint16(validatorId));
+        amountRestaked = plumeStaking.restake(validatorId, cooldown.amount);
         emit Restaked(address(this), validatorId, amountRestaked);
         return amountRestaked;
     }
@@ -128,7 +121,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     function stakeWitheld(uint256 amount) external nonReentrant onlyRole(REBALANCER_ROLE) returns (uint256 amountRestaked) {
         _rebalance();
         currentWithheldETH -= amount;
-        _depositEther(amount);
+        _depositEther(amount, 0);
         
         emit ETHSubmitted(address(this), address(this), amount, 0);
         return amount;
@@ -223,9 +216,10 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         address[] memory tokens = plumeStaking.getRewardTokens();
         for (uint256 i = 0; i < tokens.length; i++) {
             address token = tokens[i];
-            uint256 amount = amounts[i];
+            amount = amounts[i];
             if(amount > 0 && token == nativeToken){
                 _loadRewards(amount);
+                return amount;
             }
             // otherwise, let the erc20 tokens go to the contract, we will withdraw with rescue token, convert to native token and load rewards
         }
@@ -241,7 +235,8 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     function unstakeRewards() external nonReentrant returns (uint256 yield) {
         _rebalance();
         yield = getUserRewards(msg.sender);
-        _unstake(yield, true);
+        if(yield == 0){return 0;}
+        _unstake(yield, true, 0);
         userRewards[msg.sender].rewardsAccrued = 0;
         userRewards[msg.sender].rewardsBefore = getYield();
         userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
@@ -270,10 +265,26 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
             uint256 yieldAmount = amount * YIELD_FEE / RATIO_PRECISION;
             yieldEth += amount - yieldAmount;
             withHoldEth += yieldAmount;
-            _depositEther(amount - yieldAmount);
+            _depositEther(amount - yieldAmount, 0);
             if (block.timestamp >= rewardsCycleEnd) { syncRewards(); }
         }
     }
+
+    function _getValidatorInfo(uint16 validatorId) internal view returns (uint256, uint256 capacity) {
+        (PlumeStakingStorage.ValidatorInfo memory info,uint256 totalStaked , ) = plumeStaking.getValidatorInfo(uint16(validatorId));
+        if(info.maxCapacity == 0){
+            return (validatorId, type(uint256).max-1);
+        }
+
+        if (info.maxCapacity != 0 && totalStaked < info.maxCapacity) {
+            uint remainingAmount = info.maxCapacity - totalStaked;
+            if(remainingAmount >= plumeStaking.getMinStakeAmount()){ // the rewards is expected to be less than minStakeAmount, which means address(this).balance is added to currentWithheldETH, almost everytime
+                return (validatorId, remainingAmount);
+            }     
+        }
+        return (validatorId, 0);
+    }
+
 
     function _getCurrentUserYield(address user, uint256 amount) internal view returns (uint256) {
         uint256 totalYield = 0;
@@ -310,7 +321,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     //// internal functions
 
     /// @notice Deposit ETH to validators, splitting across multiple if needed
-    function _depositEther(uint256 _amount) internal returns (uint256 depositedAmount) {
+    function _depositEther(uint256 _amount, uint16 _validatorId) internal returns (uint256 depositedAmount) {
         // Initial pause check
         require(!depositEtherPaused, "Depositing ETH is paused");
         uint256 remainingAmount = _amount;
@@ -321,10 +332,25 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
             currentWithheldETH += remainingAmount;
             return 0;
         }
-    
-        while (remainingAmount > 0) {
+
+        if(_validatorId != 0){
+            (uint256 validatorId, uint256 capacity) = _getValidatorInfo(_validatorId);
+            if(capacity > 0){
+                require(_amount <= capacity, "Validator capacity is not sufficient");
+                plumeStaking.stake{value: _amount}(uint16(validatorId)); //stake stops 0 capacity from coming into here to cause infinite loops
+                remainingAmount -= _amount;
+                depositedAmount += _amount;
+                emit DepositSent(uint16(validatorId));
+            }
+        }
+
+        uint numVals = numValidators();
+        uint256 index = 0;
+        require(numVals != 0, "Validator stack is empty");
+        while (remainingAmount > 0 && index < numVals) {
             uint256 depositSize = remainingAmount;
-            (uint256 validatorId, uint256 capacity) = getNextValidator(remainingAmount);
+            _validatorId = uint16(validators[index].validatorId);
+            (uint256 validatorId, uint256 capacity) = getNextValidator(remainingAmount, _validatorId);
 
             if(capacity < depositSize) {
                 depositSize = capacity;
@@ -341,11 +367,23 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
             
             emit DepositSent(uint16(validatorId));
         }
+        require(remainingAmount == 0, "No validator with sufficient capacity to fulfill all deposit amount");
         
         return depositedAmount;
     }
 
-    function _unstake(uint256 amount, bool rewards) internal returns (uint256 amountUnstaked) {
+    function _getCoolDownPerValidator(uint16 validatorId) internal view returns (IPlumeStaking.CooldownView memory cooldown){
+        IPlumeStaking.CooldownView[] memory cooldowns = plumeStaking.getUserCooldowns(address(this));
+        for(uint256 i = 0; i < cooldowns.length; i++){
+            if(cooldowns[i].validatorId == validatorId){
+                cooldown = cooldowns[i];
+                break;
+            }
+        }
+        return cooldown;
+    }
+
+    function _unstake(uint256 amount, bool rewards, uint16 _validatorId) internal returns (uint256 amountUnstaked) {
         require(amount > 0, "Amount must be greater than 0");
         if(!rewards){
             frxETHToken.minter_burn_from(msg.sender, amount); //reduce burnt shares by yield available to claim
@@ -365,6 +403,15 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
             uint256 remainingToUnstake = amount;
             amountUnstaked = 0;
 
+            if(_validatorId != 0){
+                (bool active, ,uint256 stakedAmount,) = plumeStaking.getValidatorStats(uint16(_validatorId));
+                require(active && stakedAmount > remainingToUnstake, "Validator cannot fulfill the unstake request");
+                uint256 actualUnstaked = plumeStaking.unstake(uint16(_validatorId), remainingToUnstake);
+                amountUnstaked += actualUnstaked;
+                remainingToUnstake -= actualUnstaked;
+                require(remainingToUnstake == 0, "Validator cannot fulfill the unstake request");
+            }
+
             uint16 index = 0;
             uint numVals = numValidators();
             while (index < numVals) {
@@ -381,10 +428,13 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
                     if (remainingToUnstake == 0) break;
                 }
                 index++;
+                uint256 endTime = _getCoolDownPerValidator(uint16(validatorId)).cooldownEndTime;
+                if(endTime > cooldownTimestamp){ // use the max timestamp as the cooldown timestamp
+                    cooldownTimestamp = endTime;
+                }
                 require(index <= numVals, "Too many validators checked");
             }
-            cooldownTimestamp = plumeStaking.cooldownEndDate();
-
+            
             if (currentWithheldETH > 0 && amountUnstaked < amount) {
                 uint256 deficit = amount - amountUnstaked;
                 amountUnstaked += deficit;
@@ -417,13 +467,28 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         userRewards[msg.sender].rewardsBefore = getYield();
         userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
         amount = super._submit(recipient);
-        _depositEther(amount);
+        _depositEther(amount, 0);
+    }
+
+    function _submit(address recipient, uint16 validatorId) internal returns (uint256 amount) {
+        uint256 balance = frxETHToken.balanceOf(msg.sender);
+        userRewards[msg.sender].rewardsAccrued += _getCurrentUserYield(msg.sender, balance);
+        userRewards[msg.sender].rewardsBefore = getYield();
+        userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
+        amount = super._submit(recipient);
+        _depositEther(amount, validatorId);
     }
 
     /// @notice Claim rewards for a specific token across all validators
     function _claim() internal returns (uint256 amount) {
-        amount = plumeStaking.claim(nativeToken);
-        emit RewardClaimed(address(this), nativeToken, amount);
+        // claim can revert at anytime
+        try plumeStaking.claim(nativeToken) returns (uint256 claimedAmount) {
+            amount = claimedAmount;
+            emit RewardClaimed(address(this), nativeToken, amount);
+        } catch {
+            // If the claim reverts, return 0 and continue execution
+            amount = 0;
+        }
         return amount;
     }
 

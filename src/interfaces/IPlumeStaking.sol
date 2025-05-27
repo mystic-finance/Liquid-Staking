@@ -11,6 +11,13 @@ import { PlumeStakingStorage } from "./PlumeStakingStorage.sol";
  */
 interface IPlumeStaking {
 
+    struct CooldownView {
+        // Define struct for the return type
+        uint16 validatorId;
+        uint256 amount;
+        uint256 cooldownEndTime;
+    }
+
     // Constants that will be shared across all implementations
     /// @notice Role for administrators of PlumeStaking
     function ADMIN_ROLE() external pure returns (bytes32);
@@ -182,4 +189,8 @@ interface IPlumeStaking {
     function claimAll() external returns (uint256[] memory);
 
     function getRewardTokens() external view returns (address[] memory);
+
+    function getUserCooldowns(
+        address user
+    ) external view returns (CooldownView[] memory);
 }
