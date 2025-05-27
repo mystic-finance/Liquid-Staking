@@ -86,7 +86,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
 
         if (!active) return (validatorId, 0);
         (, capacity_) = _getValidatorInfo(uint16(validatorId));
-        uint256 percentage = (stakedAmount + depositAmount * RATIO_PRECISION) / totalStaked;
+        uint256 percentage = (stakedAmount + depositAmount) * RATIO_PRECISION / totalStaked;
         if(maxValidatorPercentage[validatorId]>0 && percentage > maxValidatorPercentage[validatorId]){
             return (validatorId, 0);
         }
