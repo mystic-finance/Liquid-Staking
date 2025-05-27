@@ -71,10 +71,10 @@ contract StPlumeMinterForkTest is Test {
             address(mockPlumeStaking)
         );
 
-        OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](1);
+        OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](3);
         validators[0] = OperatorRegistry.Validator(1);
-        // validators[1] = OperatorRegistry.Validator(2);
-        // validators[2] = OperatorRegistry.Validator(3);
+        validators[1] = OperatorRegistry.Validator(2);
+        validators[2] = OperatorRegistry.Validator(3);
         
         vm.prank(owner);
         minter.addValidators(validators);

@@ -50,6 +50,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     address nativeToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     mapping(address => WithdrawalRequest) public withdrawalRequests;
     mapping(address => UserRewards) public userRewards;
+    mapping (uint16 => uint256) public maxValidatorPercentage;
     IPlumeStaking plumeStaking;
     // Events
     event Unstaked(address indexed user, uint256 amount);
@@ -78,16 +79,22 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     }
     
     /// @notice Get the next validator to deposit to
-    function getNextValidator(uint depositAmount, uint16 validatorId) public view returns (uint256 validatorId_, uint256 capacity_) {
+    function getNextValidator(uint256 depositAmount, uint16 validatorId) public view returns (uint256 validatorId_, uint256 capacity_) {
         require(validatorId != 0, "Validator does not exist");
-        (bool active, , , ) = plumeStaking.getValidatorStats(uint16(validatorId));
+        (bool active, , uint256 stakedAmount, ) = plumeStaking.getValidatorStats(uint16(validatorId));
+        uint256 totalStaked = plumeStaking.totalAmountStaked();
 
         if (!active) return (validatorId, 0);
-        (validatorId_, capacity_) = _getValidatorInfo(uint16(validatorId));
-        if(capacity_ > 0){
-            return (validatorId_, capacity_);
+        (, capacity_) = _getValidatorInfo(uint16(validatorId));
+        uint256 percentage = (stakedAmount + depositAmount * RATIO_PRECISION) / totalStaked;
+        if(maxValidatorPercentage[validatorId]>0 && percentage > maxValidatorPercentage[validatorId]){
+            return (validatorId, 0);
         }
-        return (validatorId_, 0);
+
+        if(capacity_ > 0){
+            return (validatorId, capacity_);
+        }
+        return (validatorId, 0);
     }
 
     /// @notice Rebalance the contract
@@ -123,9 +130,8 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     function unstakeGov(uint16 validatorId, uint256 amount) external nonReentrant onlyByOwnGov returns (uint256 amountRestaked) {
         _rebalance();
         (bool active, ,uint256 stakedAmount,) = plumeStaking.getValidatorStats(uint16(validatorId));
-        PlumeStakingStorage.StakeInfo memory stakeInfo = plumeStaking.stakeInfo(address(this));
         
-        if (active && stakedAmount > 0 && stakeInfo.staked > 0 && stakeInfo.staked <= stakedAmount && stakeInfo.staked >= amount) {
+        if (active && stakedAmount > 0 && stakedAmount >= amount) {
             uint256 actualUnstaked = plumeStaking.unstake(uint16(validatorId), amount);
         }
     }
@@ -375,7 +381,6 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
             uint256 depositSize = remainingAmount;
             _validatorId = uint16(validators[index].validatorId);
             (uint256 validatorId, uint256 capacity) = getNextValidator(remainingAmount, _validatorId);
-
             if(capacity < depositSize) {
                 depositSize = capacity;
             }
