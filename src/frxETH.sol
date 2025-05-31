@@ -29,9 +29,11 @@ pragma solidity ^0.8.0;
     Withdraws are not live (as of deploy time) so loosely pegged to eth but is possible will float */
 /// @dev frxETH adheres to EIP-712/EIP-2612 and can use permits
 import { ERC20PermitPermissionedMint } from "./ERC20/ERC20PermitPermissionedMint.sol";
+import {IstPlumeMinter} from "./interfaces/IStPlumeMinter.sol";
 
 contract frxETH is ERC20PermitPermissionedMint {
 
+    address public stPlumeMinter;
     /* ========== CONSTRUCTOR ========== */
     constructor(
       address _creator_address,
@@ -40,4 +42,29 @@ contract frxETH is ERC20PermitPermissionedMint {
     ERC20PermitPermissionedMint(_creator_address, _timelock_address, "Mystic Staked Plume", "MystPlume") 
     {}
 
+  function _beforeTokenTransfer(
+        address from,
+        address to,
+        uint256 amount
+  ) internal override {
+    if(stPlumeMinter != address(0)){
+      IstPlumeMinter(stPlumeMinter).handleTokenTransfer(from);
+      IstPlumeMinter(stPlumeMinter).handleTokenTransfer(to);
+    }
+  }
+
+  function _afterTokenTransfer(
+        address from,
+        address to,
+        uint256 amount
+  ) internal override {
+    if(stPlumeMinter != address(0)){
+      IstPlumeMinter(stPlumeMinter).handleTokenTransfer(from);
+      IstPlumeMinter(stPlumeMinter).handleTokenTransfer(to);
+    }
+  }
+
+  function updateStPlumeMinter(address _stPlumeMinter) external onlyOwner {
+    stPlumeMinter = _stPlumeMinter;
+  }
 }

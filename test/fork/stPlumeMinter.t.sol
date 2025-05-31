@@ -82,6 +82,8 @@ contract StPlumeMinterForkTest is Test {
         frxETHToken.addMinter(address(minter));
         vm.prank(owner);
         frxETHToken.addMinter(address(owner));
+        vm.prank(owner);
+        frxETHToken.updateStPlumeMinter(address(minter));
     
     }
     
@@ -512,8 +514,8 @@ contract StPlumeMinterForkTest is Test {
         assertEq(minter.YIELD_FEE(), 2000);
         
         // Test redemption fees setting
-        minter.setRedemptionFees(10000, 500); // 1% instant, 0.05% standard
-        assertEq(minter.INSTANT_REDEMPTION_FEE(), 10000);
+        minter.setRedemptionFees(10001, 500); // 1% instant, 0.05% standard
+        assertEq(minter.INSTANT_REDEMPTION_FEE(), 10001);
         assertEq(minter.REDEMPTION_FEE(), 500);
         
         // Test fee limits
@@ -521,7 +523,7 @@ contract StPlumeMinterForkTest is Test {
         minter.setYieldFee(500001); // Over 50%
         
         vm.expectRevert();
-        minter.setRedemptionFees(100001, 5); // Instant fee too high
+        minter.setRedemptionFees(10000001, 5); // Instant fee too high
         
         vm.stopPrank();
     }
@@ -534,7 +536,7 @@ contract StPlumeMinterForkTest is Test {
         
         // Test invalid cycle length
         vm.expectRevert();
-        minter.setRewardsCycleLength(91 days); // Too long
+        minter.setRewardsCycleLength(400 days); // Too long
         
         vm.stopPrank();
         
@@ -566,7 +568,7 @@ contract StPlumeMinterForkTest is Test {
         minter.claim(1);
         
         // Fast forward to end of rewards cycle
-        vm.warp(block.timestamp + 10 days);
+        vm.warp(minter.rewardsCycleEnd() + 1);
         minter.syncRewards();
         
         // User withdraws rewards
@@ -751,7 +753,7 @@ contract StPlumeMinterForkTest is Test {
         minter.claim(1);
         
         // Fast forward to end of rewards cycle
-        vm.warp(block.timestamp + 10 days);
+        vm.warp(minter.rewardsCycleEnd() + 1);
         minter.syncRewards();
         
         // Test yield functions
@@ -857,10 +859,10 @@ contract StPlumeMinterForkTest is Test {
         
         // Test fee limits
         vm.expectRevert();
-        minter.setRedemptionFees(100001, 50);
+        minter.setRedemptionFees(1000001, 50);
         
         vm.expectRevert();
-        minter.setRedemptionFees(800, 100001);
+        minter.setRedemptionFees(800, 1000001);
         
         vm.stopPrank();
     }
@@ -1044,7 +1046,7 @@ contract StPlumeMinterForkTest is Test {
         uint256 claimedAmount = minter.claim(1);
         
         // 3. Fast forward to end of rewards cycle
-        vm.warp(block.timestamp + 10 days);
+        vm.warp(minter.rewardsCycleEnd() + 1);
         minter.syncRewards();
         
         // 4. Unstake half of the initial deposit
@@ -1191,7 +1193,7 @@ contract StPlumeMinterForkTest is Test {
         assertEq(frxETHToken.totalSupply(), initialFrxETHSupply + 10 ether, "frxETH supply should not change from loading rewards");
         
         // Fast forward to end of rewards cycle
-        vm.warp(block.timestamp + 10 days);
+        vm.warp(minter.rewardsCycleEnd() + 1);
         minter.syncRewards();
         
         // Check that user1 has rewards available
@@ -1228,7 +1230,7 @@ contract StPlumeMinterForkTest is Test {
         minter.claim(1);
         
         // Fast forward to end of rewards cycle
-        vm.warp(block.timestamp + 10 days);
+        vm.warp(minter.rewardsCycleEnd() + 1);
         minter.syncRewards();
         
         // Check initial rewards
@@ -1249,7 +1251,7 @@ contract StPlumeMinterForkTest is Test {
         minter.claim(1);
         
         // Fast forward to end of next rewards cycle
-        vm.warp(block.timestamp + 14 days);
+        vm.warp(minter.rewardsCycleEnd() + 1);
         minter.syncRewards();
         
         // Check rewards after second cycle

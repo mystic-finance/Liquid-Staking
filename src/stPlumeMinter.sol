@@ -11,13 +11,15 @@ import { IPlumeStaking } from "./interfaces/IPlumeStaking.sol";
 import { PlumeStakingStorage } from "./interfaces/PlumeStakingStorage.sol";
 import "openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
 import "openzeppelin-contracts/contracts/access/AccessControl.sol";
+import {IstPlumeMinter} from "./interfaces/IStPlumeMinter.sol";
 
 /// @title stPlumeMinter - Enhanced frxETHMinter with staking capabilities
 /// @notice Extends frxETHMinter to add unstaking, restaking, and reward management
-contract stPlumeMinter is frxETHMinter, AccessControl {
+contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
     // Role definitions
     bytes32 public constant REBALANCER_ROLE = keccak256("REBALANCER_ROLE");
     bytes32 public constant CLAIMER_ROLE = keccak256("CLAIMER_ROLE");
+    bytes32 public constant HANDLER_ROLE = keccak256("HANDLER_ROLE");
     uint256 public YIELD_FEE = 100000; // 10%
     uint256 public REDEMPTION_FEE = 150; // 0.015%
     uint256 public INSTANT_REDEMPTION_FEE = 5000; // 0.5%
@@ -72,9 +74,11 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         _setupRole(DEFAULT_ADMIN_ROLE, _owner);
         _setupRole(REBALANCER_ROLE, _owner);
         _setupRole(CLAIMER_ROLE, _owner);
+        _setupRole(HANDLER_ROLE, frxETHAddress);
     }
 
     function submitForValidator(uint16 validatorId) external payable {
+        require(_checkValidator(uint256(validatorId)), "Validator does not exist");
         _submit(msg.sender, validatorId);
     }
     
@@ -112,6 +116,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
 
     function unstakeFromValidator(uint256 amount, uint16 validatorId) external nonReentrant returns (uint256 amountUnstaked) {
         _rebalance();
+        require(_checkValidator(uint256(validatorId)), "Validator does not exist");
         require(amount >= minStake, "not enough to unstake");
         amountUnstaked =  _unstake(amount, false, validatorId);
         return amountUnstaked;
@@ -256,6 +261,13 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         return amount;
     }
 
+    function handleTokenTransfer(address user) external onlyRole(HANDLER_ROLE) {
+        uint256 balance = frxETHToken.balanceOf(user);
+        userRewards[user].rewardsAccrued += _getCurrentUserYield(user, balance); //accrue reward to avoid reward loss
+        userRewards[user].rewardsBefore = getYield();
+        userRewards[user].lastCycleClaimed = cycleRewards.length;
+    }
+
     function getUserRewards(address user) public view returns (uint256 yield) {
         uint256 balance = frxETHToken.balanceOf(user);
         yield = normalizedAmount(user, balance) - balance;
@@ -372,6 +384,8 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
                 depositedAmount += _amount;
                 emit DepositSent(uint16(validatorId));
             }
+            require(remainingAmount == 0, "No validator with sufficient capacity to fulfill all deposit amount");
+            return depositedAmount;
         }
 
         uint numVals = numValidators();
@@ -416,10 +430,6 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         require(amount > 0, "Amount must be greater than 0");
         if(!rewards){
             frxETHToken.minter_burn_from(msg.sender, amount); //reduce burnt shares by yield available to claim
-            uint256 balance = frxETHToken.balanceOf(msg.sender);
-            userRewards[msg.sender].rewardsAccrued += _getCurrentUserYield(msg.sender, balance); //accrue reward to avoid reward loss
-            userRewards[msg.sender].rewardsBefore = getYield();
-            userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
         }
         uint256 cooldownTimestamp;
         require(withdrawalRequests[msg.sender].amount == 0, "Withdrawal already requested");
@@ -493,20 +503,12 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
 
     /// @notice Submit ETH to the contract
     function _submit(address recipient) internal override returns (uint256 amount) {
-        uint256 balance = frxETHToken.balanceOf(msg.sender);
-        userRewards[msg.sender].rewardsAccrued += _getCurrentUserYield(msg.sender, balance);
-        userRewards[msg.sender].rewardsBefore = getYield();
-        userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
         amount = super._submit(recipient);
         require(amount >= minStake, "not enough to stake");
         _depositEther(amount, 0);
     }
 
     function _submit(address recipient, uint16 validatorId) internal returns (uint256 amount) {
-        uint256 balance = frxETHToken.balanceOf(msg.sender);
-        userRewards[msg.sender].rewardsAccrued += _getCurrentUserYield(msg.sender, balance);
-        userRewards[msg.sender].rewardsBefore = getYield();
-        userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
         amount = super._submit(recipient);
         require(amount >= minStake, "not enough to stake");
         _depositEther(amount, validatorId);
@@ -567,24 +569,24 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         uint256 newInstantFee, 
         uint256 newStandardFee
     ) external onlyByOwnGov {
-        require(newInstantFee <= 100000 && newStandardFee <= 100000, "Fees too high");
+        require(newInstantFee <= 1000000 && newStandardFee <= 1000000, "Fees too high");
         INSTANT_REDEMPTION_FEE = newInstantFee;
         REDEMPTION_FEE = newStandardFee;
     }
 
     function setRewardsCycleLength(uint32 newLength) external onlyByOwnGov {
-        require(newLength >= 1 days && newLength <= 90 days, "Invalid cycle length");
+        require(newLength >= 1 days && newLength <= 365 days, "Invalid cycle length");
         rewardsCycleLength = newLength;
     }
 
     function setMinStake(uint256 _minStake) external onlyByOwnGov {
-        require(_minStake >0, "Invalid cycle length");
+        require(_minStake >0, "minimum stake too low");
         minStake = _minStake;
     }
 
     function setMaxValidatorPercentage(uint256 _validatorId, uint256 _maxPercentage) external onlyByOwnGov {
         require(_maxPercentage <= RATIO_PRECISION, "Invalid max percentage");
-        maxValidatorPercentage[_validatorId] = _maxPercentage;
+        maxValidatorPercentage[uint16(_validatorId)] = _maxPercentage;
     }
 
     receive() external payable override {
