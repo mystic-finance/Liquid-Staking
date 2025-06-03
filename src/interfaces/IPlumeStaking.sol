@@ -131,6 +131,12 @@ interface IPlumeStaking {
     function cooldownEndDate() external view returns (uint256 timestamp);
 
     /**
+     * @notice Get the cooldown interval for the contract
+     * @return cooldownInterval Cooldown interval in seconds
+     */
+    function getCooldownInterval() external view returns (uint256 cooldownInterval);
+
+    /**
      * @notice Get the reward rate for a specific token
      * @param token Address of the token to check
      * @return rate Current reward rate for the token

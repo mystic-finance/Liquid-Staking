@@ -40,7 +40,7 @@ contract StPlumeMinterForkTest is Test {
     
     function setUp() public {        
         // Deploy mock PlumeStaking
-        mockPlumeStaking =  IPlumeStaking(0xCF8B97260F77c11d58542644c5fD1D5F93FdA57d);
+        mockPlumeStaking =  IPlumeStaking(0x30c791E4654EdAc575FA1700eD8633CB2FEDE871);
         // IPlumeStaking(0xCF8B97260F77c11d58542644c5fD1D5F93FdA57d);
         // IPlumeStaking(0xA20bfe49969D4a0E9abfdb6a46FeD777304ba07f);
         
@@ -200,6 +200,10 @@ contract StPlumeMinterForkTest is Test {
         vm.startPrank(user1);
         frxETHToken.approve(address(minter), 2 ether);
         minter.unstake(2 ether);
+
+        vm.warp(block.timestamp + 20 days);
+        vm.prank(owner);
+        minter.processBatchUnstake();
         
         // Fast-forward past cooldown period
         vm.warp(block.timestamp + 3 days);
@@ -574,6 +578,10 @@ contract StPlumeMinterForkTest is Test {
         // User withdraws rewards
         vm.prank(user1);
         uint256 withdrawnRewards = minter.unstakeRewards();
+
+        vm.warp(block.timestamp + 20 days);
+        vm.prank(owner);
+        minter.processBatchUnstake();
 
         vm.warp(block.timestamp + 86400);
         minter.withdraw(user1);
@@ -1054,6 +1062,9 @@ contract StPlumeMinterForkTest is Test {
         (uint256 amountUnstaked, uint256 newFrxBalance) = _unstakeAndVerify(unstakeAmount, submitAmount, initialFrxETHSupply);
         
         // 5. Wait for cooldown and withdraw
+        vm.warp(block.timestamp + 20 days);
+        vm.prank(owner);
+        minter.processBatchUnstake();
         vm.warp(block.timestamp + 3 days);
         vm.prank(user1);
         uint256 withdrawn = minter.withdraw(user1);
@@ -1071,6 +1082,9 @@ contract StPlumeMinterForkTest is Test {
         assertApproxEqAbs(rewardsUnstaked, userRewards, 0.0001 ether, "Unstaked rewards don't match expected user rewards");
         
         // 7. Wait for cooldown and withdraw rewards
+        vm.warp(block.timestamp + 20 days);
+        vm.prank(owner);
+        minter.processBatchUnstake();
         vm.warp(block.timestamp + 3 days);
         vm.prank(user1);
         uint256 rewardsWithdrawn = minter.withdraw(user1);
@@ -1208,6 +1222,9 @@ contract StPlumeMinterForkTest is Test {
         assertApproxEqAbs(unstaked, userRewards, 0.0001 ether, "Unstaked rewards don't match expected user rewards");
         
         // Wait for cooldown and withdraw
+        vm.warp(block.timestamp + 20 days);
+        vm.prank(owner);
+        minter.processBatchUnstake();
         vm.warp(block.timestamp + 3 days);
         vm.prank(user1);
         uint256 withdrawn = minter.withdraw(user1);
@@ -1351,7 +1368,10 @@ contract StPlumeMinterForkTest is Test {
         vm.startPrank(user1);
         frxETHToken.approve(address(minter), 10 ether);
         minter.unstake(10 ether);
-        vm.warp(block.timestamp + 100 days);
+        vm.warp(block.timestamp + 20 days);
+        vm.prank(owner);
+        minter.processBatchUnstake();
+        vm.warp(block.timestamp + 2 days);
         minter.withdraw(user1);
         vm.stopPrank();
         
