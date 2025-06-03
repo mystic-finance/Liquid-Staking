@@ -71,10 +71,12 @@ contract StPlumeMinterForkTest is Test {
             address(mockPlumeStaking)
         );
 
-        OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](3);
+        OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](5);
         validators[0] = OperatorRegistry.Validator(1);
         validators[1] = OperatorRegistry.Validator(2);
         validators[2] = OperatorRegistry.Validator(3);
+        validators[3] = OperatorRegistry.Validator(4);
+        validators[4] = OperatorRegistry.Validator(5);
         
         vm.prank(owner);
         minter.addValidators(validators);
@@ -202,8 +204,9 @@ contract StPlumeMinterForkTest is Test {
         minter.unstake(2 ether);
 
         vm.warp(block.timestamp + 20 days);
-        vm.prank(owner);
+        vm.startPrank(owner);
         minter.processBatchUnstake();
+        vm.startPrank(user1);
         
         // Fast-forward past cooldown period
         vm.warp(block.timestamp + 3 days);
@@ -239,12 +242,15 @@ contract StPlumeMinterForkTest is Test {
         vm.startPrank(user1);
         frxETHToken.approve(address(minter), 2 ether);
         minter.unstake(2 ether);
+
+        vm.warp(block.timestamp + 20 days);
+        vm.startPrank(owner);
+        minter.processBatchUnstake();
         
         // Restake to validator 2
-        vm.startPrank(owner);
         vm.warp(block.timestamp + 3 days);
+        vm.startPrank(owner);
         uint256 amountRestaked = minter.restake(1);
-        vm.stopPrank();
         
         // Check restake result
         assertGt(amountRestaked, 2 ether - 0.05e18);
@@ -552,6 +558,7 @@ contract StPlumeMinterForkTest is Test {
         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 1 ether);
         
         // Claim rewards as owner
+        minter.getClaimableReward();
         vm.prank(owner);
         minter.claim(1);
         
@@ -568,6 +575,7 @@ contract StPlumeMinterForkTest is Test {
         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 2 ether);
         
         // Claim rewards
+        minter.getClaimableReward();
         vm.prank(owner);
         minter.claim(1);
         
@@ -580,7 +588,7 @@ contract StPlumeMinterForkTest is Test {
         uint256 withdrawnRewards = minter.unstakeRewards();
 
         vm.warp(block.timestamp + 20 days);
-        vm.prank(owner);
+        vm.startPrank(owner);
         minter.processBatchUnstake();
 
         vm.warp(block.timestamp + 86400);
@@ -689,10 +697,13 @@ contract StPlumeMinterForkTest is Test {
         
         // Verify standard unstaking
         assertEq(unstaked, 5 ether);
+        vm.warp(block.timestamp + 20 days);
+        vm.startPrank(owner);
+        minter.processBatchUnstake();
         
         // Check withdrawal request timestamp is set to cooldown end date
         (uint256 amount, uint256 timestamp) = minter.withdrawalRequests(user1);
-        vm.warp(timestamp);
+       vm.warp(block.timestamp + 20 days);
         vm.startPrank(user1);
         minter.withdraw(user1);
         vm.stopPrank();
@@ -733,6 +744,7 @@ contract StPlumeMinterForkTest is Test {
         
         // Generate and claim rewards to create yield fees
         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 2 ether);
+        minter.getClaimableReward();
         vm.prank(owner);
         minter.claim(1);
 
@@ -757,7 +769,8 @@ contract StPlumeMinterForkTest is Test {
         
         // Generate rewards
         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 2 ether);
-        vm.prank(owner);
+        minter.getClaimableReward();
+        vm.startPrank(owner);
         minter.claim(1);
         
         // Fast forward to end of rewards cycle
@@ -786,11 +799,17 @@ contract StPlumeMinterForkTest is Test {
         vm.startPrank(user1);
         frxETHToken.approve(address(minter), 2 ether);
         minter.unstake(2 ether);
+
         (uint256 requestAmount, uint256 requestTimestamp) = minter.withdrawalRequests(user1);
         assertEq(requestAmount, 2 ether);
         
         // Try to withdraw after cooldown ends
-        vm.warp(requestTimestamp + 1 days);
+        vm.warp(block.timestamp + 20 days);
+        vm.startPrank(owner);
+        minter.processBatchUnstake();
+        vm.startPrank(user1);
+
+         vm.warp(block.timestamp + 20 days);
         uint256 heldEth = minter.currentWithheldETH();
         minter.withdraw(user1);
         assertGt(user1.balance, balanceBefore + 2 ether - 0.1e18); //consider fee
@@ -888,6 +907,7 @@ contract StPlumeMinterForkTest is Test {
         
         // Generate and claim rewards to create yield fees
         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 2 ether);
+        minter.getClaimableReward();
         vm.prank(owner);
         minter.claim(1);
         
@@ -1042,6 +1062,14 @@ contract StPlumeMinterForkTest is Test {
     // Break the test into smaller helper functions to avoid stack too deep error
     function test_differential_full_flow() public {
         // Initial state
+        vm.startPrank(owner);
+        // vm.expectRevert();
+        minter.addValidator(OperatorRegistry.Validator({
+            validatorId: 7
+        }));
+        vm.stopPrank();
+
+        // minter.nextBatchUnstakeTimePerValidator(uint16(7));
         uint256 initialUser1Balance = user1.balance;
         uint256 initialFrxETHSupply = frxETHToken.totalSupply();
         
@@ -1050,6 +1078,7 @@ contract StPlumeMinterForkTest is Test {
         (uint256 userBalance, uint256 frxBalance) = _submitAndVerify(submitAmount, initialUser1Balance, initialFrxETHSupply);
         
         // 2. Generate and claim rewards
+        minter.getClaimableReward();
         vm.prank(owner);
         uint256 claimedAmount = minter.claim(1);
         
@@ -1059,14 +1088,16 @@ contract StPlumeMinterForkTest is Test {
         
         // 4. Unstake half of the initial deposit
         uint256 unstakeAmount = 5 ether;
-        (uint256 amountUnstaked, uint256 newFrxBalance) = _unstakeAndVerify(unstakeAmount, submitAmount, initialFrxETHSupply);
+        _unstakeAndVerify(unstakeAmount, submitAmount, initialFrxETHSupply);
         
         // 5. Wait for cooldown and withdraw
         vm.warp(block.timestamp + 20 days);
-        vm.prank(owner);
+        minter.nextBatchUnstakeTimePerValidator(uint16(1));
+        (, uint256 requestTimestamp) = minter.withdrawalRequests(user1);
+        vm.startPrank(owner);
         minter.processBatchUnstake();
-        vm.warp(block.timestamp + 3 days);
-        vm.prank(user1);
+        vm.warp(requestTimestamp);
+        vm.startPrank(user1);
         uint256 withdrawn = minter.withdraw(user1);
         
         // Verify state after withdraw
@@ -1075,7 +1106,6 @@ contract StPlumeMinterForkTest is Test {
         
         // 6. Check user rewards and unstake them
         uint256 userRewards = minter.getUserRewards(user1);
-        vm.prank(user1);
         uint256 rewardsUnstaked = minter.unstakeRewards();
         
         // Verify rewards unstaked
@@ -1083,9 +1113,10 @@ contract StPlumeMinterForkTest is Test {
         
         // 7. Wait for cooldown and withdraw rewards
         vm.warp(block.timestamp + 20 days);
-        vm.prank(owner);
+        vm.startPrank(owner);
         minter.processBatchUnstake();
-        vm.warp(block.timestamp + 3 days);
+        (, uint256 requestTimestamp2) = minter.withdrawalRequests(user1);
+        vm.warp(requestTimestamp2);
         vm.prank(user1);
         uint256 rewardsWithdrawn = minter.withdraw(user1);
         
@@ -1223,10 +1254,10 @@ contract StPlumeMinterForkTest is Test {
         
         // Wait for cooldown and withdraw
         vm.warp(block.timestamp + 20 days);
-        vm.prank(owner);
+        vm.startPrank(owner);
         minter.processBatchUnstake();
         vm.warp(block.timestamp + 3 days);
-        vm.prank(user1);
+        vm.startPrank(user1);
         uint256 withdrawn = minter.withdraw(user1);
         
         // Verify user received rewards
@@ -1243,6 +1274,7 @@ contract StPlumeMinterForkTest is Test {
         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + rewardAmount);
         
         // Claim rewards
+        minter.getClaimableReward();
         vm.prank(owner);
         minter.claim(1);
         
@@ -1264,6 +1296,7 @@ contract StPlumeMinterForkTest is Test {
         
         // Generate more rewards
         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + rewardAmount);
+        minter.getClaimableReward();
         vm.prank(owner);
         minter.claim(1);
         
@@ -1299,6 +1332,7 @@ contract StPlumeMinterForkTest is Test {
         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + rewardAmount);
         
         // Claim rewards
+        minter.getClaimableReward();
         vm.prank(owner);
         minter.claim(1);
         
@@ -1321,6 +1355,7 @@ contract StPlumeMinterForkTest is Test {
         
         // Generate more rewards
         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + rewardAmount);
+        minter.getClaimableReward();
         vm.prank(owner);
         minter.claim(1);
         
@@ -1353,6 +1388,7 @@ contract StPlumeMinterForkTest is Test {
         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + rewardAmount);
         
         // Claim rewards
+        minter.getClaimableReward();
         vm.prank(owner);
         minter.claim(1);
         
@@ -1369,7 +1405,7 @@ contract StPlumeMinterForkTest is Test {
         frxETHToken.approve(address(minter), 10 ether);
         minter.unstake(10 ether);
         vm.warp(block.timestamp + 20 days);
-        vm.prank(owner);
+        vm.startPrank(owner);
         minter.processBatchUnstake();
         vm.warp(block.timestamp + 2 days);
         minter.withdraw(user1);
@@ -1411,6 +1447,7 @@ contract StPlumeMinterForkTest is Test {
         
         // Generate rewards
         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 1 ether);
+        minter.getClaimableReward();
         vm.prank(owner);
         minter.claim(1);
         
@@ -1450,6 +1487,7 @@ contract StPlumeMinterForkTest is Test {
         
         // Generate more rewards
         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 1 ether);
+        minter.getClaimableReward();
         vm.prank(owner);
         minter.claim(1);
         

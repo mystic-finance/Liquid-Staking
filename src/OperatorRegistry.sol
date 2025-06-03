@@ -45,7 +45,7 @@ contract OperatorRegistry is Owned {
     /// @notice Add a new validator
     /** @dev You should verify offchain that the validator is indeed valid before adding it
         Reason we don't do that here is for gas */
-    function addValidator(Validator calldata validator) public onlyByOwnGov {
+    function addValidator(Validator calldata validator) public virtual onlyByOwnGov {
         validators.push(validator);
         emit ValidatorAdded(validator.validatorId, bytes(""));
     }

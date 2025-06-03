@@ -151,7 +151,7 @@ interface IPlumeStaking {
      * @param token Address of the reward token 
      * @return amount Amount of reward token claimable
      */
-    function getClaimableReward(address user, address token) external view returns (uint256 amount);
+    function getClaimableReward(address user, address token) external returns (uint256 amount);
 
     /**
      * @notice Get the list of validators a user has staked with

@@ -39,7 +39,7 @@ interface IstPlumeMinter {
     function stakeInfo() external view returns (PlumeStakingStorage.StakeInfo memory);
     function totalAmountClaimable() external view returns (uint256 amount);
     function getRewardRate() external view returns (uint256 rate);
-    function getClaimableReward() external view returns (uint256 amount);
+    function getClaimableReward() external returns (uint256 amount);
     function claim(uint16 validatorId) external returns (uint256 amount);
     function loadRewards() external payable returns (uint256 amount);
     function claimAll() external returns (uint256 amount);

@@ -33,7 +33,6 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
     uint256 public minStake = 1e16;
     uint256 public withdrawalQueueThreshold = 10 ether;
     uint256 public batchUnstakeInterval = 1 days;
-    uint256 public nextBatchUnstakeTime;
 
     
     struct WithdrawalRequest {
@@ -81,6 +80,13 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         _setupRole(REBALANCER_ROLE, _owner);
         _setupRole(CLAIMER_ROLE, _owner);
         _setupRole(HANDLER_ROLE, frxETHAddress);
+    }
+
+    function addValidator(Validator calldata validator) public override onlyByOwnGov {
+        require(!_checkValidator(uint256(validator.validatorId)), "Validator already exists");
+        validators.push(validator);
+        nextBatchUnstakeTimePerValidator[uint16(validator.validatorId)] = block.timestamp + plumeStaking.getCooldownInterval();
+        emit ValidatorAdded(validator.validatorId, bytes(""));
     }
 
     function submitForValidator(uint16 validatorId) external payable {
@@ -233,12 +239,13 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
     }
 
     /// @notice Get the claimable reward amount for a user and token
-    function getClaimableReward() external view returns (uint256 amount) {
+    function getClaimableReward() public returns (uint256 amount) {
         return plumeStaking.getClaimableReward(address(this), nativeToken);
     }
 
     /// @notice Claim rewards for a specific token from a specific validator
     function claim(uint16 validatorId) external nonReentrant onlyRole(CLAIMER_ROLE)  returns (uint256 amount) {
+        if(getClaimableReward() == 0){return 0;}
         amount = plumeStaking.claim(nativeToken, validatorId);
         _loadRewards(amount);
         
@@ -563,6 +570,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
     /// @notice Claim rewards for a specific token across all validators
     function _claim() internal returns (uint256 amount) {
         // claim can revert at anytime
+        if(getClaimableReward() == 0){return 0;}
         try plumeStaking.claim(nativeToken) returns (uint256 claimedAmount) {
             amount = claimedAmount;
             emit RewardClaimed(address(this), nativeToken, amount);
