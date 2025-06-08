@@ -17,12 +17,14 @@ interface IstPlumeMinter {
     function rewardsCycleLength() external view returns (uint32);
     function lastSync() external view returns (uint32);
     function rewardsCycleEnd() external view returns (uint32);
-    function lastRewardAmount() external view returns (uint192);
+    function lastRewardAmount() external view returns (uint256);
     function minStake() external view returns (uint256);
     // function cycleRewards(uint256 index) external view returns (CycleRewards memory);
     // function withdrawalRequests(address user) external view returns (WithdrawalRequest memory);
     // function userRewards(address user) external view returns (UserRewards memory);
     function maxValidatorPercentage(uint16 validatorId) external view returns (uint256);
+    function withdrawalQueueThreshold() external view returns (uint256);
+    function batchUnstakeInterval() external view returns (uint256);
 
     // External Functions
     function submitForValidator(uint16 validatorId) external payable;
@@ -42,7 +44,7 @@ interface IstPlumeMinter {
     function getClaimableReward() external returns (uint256 amount);
     function claim(uint16 validatorId) external returns (uint256 amount);
     function loadRewards() external payable returns (uint256 amount);
-    function claimAll() external returns (uint256 amount);
+    function claimAll() external returns (uint256[] memory amounts);
     function handleTokenTransfer(address user) external;
     function getUserRewards(address user) external view returns (uint256 yield);
     function unstakeRewards() external returns (uint256 yield);
@@ -56,4 +58,5 @@ interface IstPlumeMinter {
     function setRewardsCycleLength(uint32 newLength) external;
     function setMinStake(uint256 _minStake) external;
     function setMaxValidatorPercentage(uint256 _validatorId, uint256 _maxPercentage) external;
+    function getValidatorStake(uint16 validatorId) external view returns (uint256);
 }

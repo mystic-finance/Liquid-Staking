@@ -196,7 +196,11 @@ interface IPlumeStaking {
 
     function getRewardTokens() external view returns (address[] memory);
 
+    function isRewardToken(address token) external view returns (bool);
+
     function getUserCooldowns(
         address user
     ) external view returns (CooldownView[] memory);
+
+    function getUserValidatorStake(address user, uint16 validatorId) external view returns (uint256) ;
 }
