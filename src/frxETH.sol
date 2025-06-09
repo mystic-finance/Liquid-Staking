@@ -48,8 +48,8 @@ contract frxETH is ERC20PermitPermissionedMint {
         uint256 amount
   ) internal override {
     if(stPlumeMinter != address(0)){
-      IstPlumeMinter(stPlumeMinter).handleTokenTransfer(from);
-      IstPlumeMinter(stPlumeMinter).handleTokenTransfer(to);
+      if(!(from == address(0) || from == address(this))) IstPlumeMinter(stPlumeMinter).handleTokenTransfer(from);
+      if(!(to == address(0) || to == address(this))) IstPlumeMinter(stPlumeMinter).handleTokenTransfer(to);
     }
   }
 
@@ -59,8 +59,8 @@ contract frxETH is ERC20PermitPermissionedMint {
         uint256 amount
   ) internal override {
     if(stPlumeMinter != address(0)){
-      IstPlumeMinter(stPlumeMinter).handleTokenTransfer(from);
-      IstPlumeMinter(stPlumeMinter).handleTokenTransfer(to);
+      if(!(from == address(0) || from == address(this))) IstPlumeMinter(stPlumeMinter).handleTokenTransfer(from);
+      if(!(to == address(0) || to == address(this))) IstPlumeMinter(stPlumeMinter).handleTokenTransfer(to);
     }
   }
 
