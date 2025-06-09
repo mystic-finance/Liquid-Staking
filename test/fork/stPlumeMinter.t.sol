@@ -1807,6 +1807,83 @@ contract StPlumeMinterForkTest is Test {
         assertEq(deficit1, 0);
     }
 
+    function test_integration_flow1_3() public {
+        // First submit ETH
+        vm.prank(user1);
+        minter.submit{value: 100 ether}();
+
+        vm.prank(user2);
+        minter.submit{value: 100 ether}();
+        
+        // Unstake
+        _updateBatchUnstake();
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 100 ether);
+        minter.unstake(3.9 ether);
+        vm.startPrank(user2);
+        frxETHToken.approve(address(minter), 100 ether);
+        minter.unstake(3 ether);
+        _updateBatchUnstake();
+
+        vm.startPrank(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp) = minter.withdrawalRequests(user1);
+        vm.warp(requestTimestamp);
+        uint currentWithheldETHBefore = minter.currentWithheldETH();
+        uint256 balanceBefore = user1.balance;
+        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 balanceAfter = user1.balance;
+        vm.stopPrank();
+        uint fee = minter.INSTANT_REDEMPTION_FEE() * 3.9 ether / 1e6;
+        uint currentWithheldETH = minter.currentWithheldETH();
+        
+        // Check withdrawal result
+        assertGt(amountWithdrawn, 3.9 ether - fee-1);
+        assertGt(balanceAfter - balanceBefore, 3.9 ether - fee-1); //consider fee
+        assertEq(currentWithheldETHBefore - currentWithheldETH, 3.9 ether);
+
+        vm.startPrank(user2);
+        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2) = minter.withdrawalRequests(user2);
+        vm.warp(requestTimestamp2);
+        uint currentWithheldETHBefore2 = minter.currentWithheldETH();
+        uint256 balanceBefore2 = user2.balance;
+        uint256 amountWithdrawn2 = minter.withdraw(user2);
+        uint256 balanceAfter2 = user2.balance;
+        vm.stopPrank();
+        uint fee2 = minter.REDEMPTION_FEE() * 3 ether / 1e6;
+        uint currentWithheldETH2 = minter.currentWithheldETH();
+        
+        // Check withdrawal result
+        assertGt(amountWithdrawn2, 3 ether - fee2-1);
+        assertGt(balanceAfter2 - balanceBefore2, 3 ether - fee2-1); //consider fee
+        assertEq(currentWithheldETH2 - currentWithheldETHBefore2, 0);
+    }
+
+    function test_integration_flow_admin() public {
+        // First submit ETH
+        vm.prank(user1);
+        minter.submit{value: 100 ether}();
+        vm.prank(user2);
+        minter.submit{value: 100 ether}();
+        
+        // Unstake
+        
+        vm.startPrank(owner);
+        minter.unstakeGov(1, 100 ether);
+        _updateBatchUnstake();
+        _updateBatchUnstake();
+
+        vm.warp(block.timestamp + 30 days);
+        uint256 balanceBefore = address(minter).balance;
+        uint currentWithheldETHBefore = minter.currentWithheldETH();
+        uint256 amountWithdrawn = minter.withdrawGov(0);
+        uint256 balanceAfter = address(minter).balance;
+        uint currentWithheldETH = minter.currentWithheldETH();
+        vm.stopPrank();
+        assertGt(amountWithdrawn, 100 ether - 1, 'invalid amount');
+        assertGt(balanceAfter - balanceBefore, 100 ether - 1, 'balance did not increase');
+        assertEq(currentWithheldETH - currentWithheldETHBefore, 100 ether);
+    }
+
     function test_integration_flow2() public {
         // First submit ETH
         vm.prank(user1);

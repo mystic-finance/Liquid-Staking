@@ -33,6 +33,8 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
     uint256 public minStake = 1e16;
     uint256 public withdrawalQueueThreshold = 100 ether;
     uint256 public batchUnstakeInterval = 3 days;
+    uint256 public totalInstantUnstaked;
+    uint256 public totalUnstaked;
 
     
     struct WithdrawalRequest {
@@ -151,7 +153,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         (bool active, ,uint256 stakedAmount,) = plumeStaking.getValidatorStats(uint16(validatorId));
         
         if (active && stakedAmount > 0 && stakedAmount >= amount) {
-            uint256 actualUnstaked = plumeStaking.unstake(uint16(validatorId), amount);
+            amountRestaked = plumeStaking.unstake(uint16(validatorId), amount);
         }
     }
 
@@ -202,7 +204,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         request.timestamp = 0;
         request.deficit = 0;
 
-        if(amount > currentWithheldETH ){
+        if(amount >= currentWithheldETH){
             uint256 balanceBefore = address(this).balance;
             plumeStaking.withdraw();
             uint256 balanceAfter = address(this).balance;
@@ -212,9 +214,10 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
             fee = totalAmount * INSTANT_REDEMPTION_FEE / RATIO_PRECISION;
             withdrawn = amount;
             currentWithheldETH -= amount;
+            totalInstantUnstaked -= totalAmount;
         }
 
-        currentWithheldETH -= totalAmount - amount;
+        currentWithheldETH -= totalAmount - amount; // remove deficit from currentWithHeldEth as buffer
         uint256 cachedWithheldETH = currentWithheldETH;
         currentWithheldETH += withdrawn;
         currentWithheldETH -= amount; //net must be > 0
@@ -225,7 +228,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
             currentWithheldETH += amount - withdrawn; // net must be > 0
             withHoldEth -= amount - withdrawn; // reduce fee since some covered by withdrawal fee
         }
-        
+        totalUnstaked -= totalAmount;
         require(currentWithheldETH >= cachedWithheldETH, "Insufficient funds to cover deficit as new currentWithheldETH must be net positive");
         // withdrawal fee can also cover fee paid on withdrawal (set by the team
         (bool success,) = address(recipient).call{value: amountToWithdraw}(""); //send amount to user
@@ -477,9 +480,10 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         require(withdrawalRequests[msg.sender].amount == 0, "Withdrawal already requested");
     
         // Check if we can cover this with withheld ETH
-        if (currentWithheldETH >= amount) { //instant redemption
+        if (currentWithheldETH > amount && currentWithheldETH > amount + totalInstantUnstaked) { //instant redemption
             amountUnstaked = amount;
             cooldownTimestamp = block.timestamp;
+            totalInstantUnstaked += amount;
         }else{
             uint256 remainingToUnstake = amount;
             amountUnstaked = 0;
@@ -545,6 +549,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         });
         
         emit Unstaked(msg.sender, amountUnstaked);
+        totalUnstaked += amountUnstaked + deficit;
         return amountUnstaked;
     }
 
