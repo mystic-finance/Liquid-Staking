@@ -542,7 +542,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
                 // amountUnstaked += deficit;
                 remainingToUnstake -= deficit;
                 totalInstantUnstaked += deficit;
-                require(deficit <= currentWithheldETH, "Insufficient funds to cover deficit");
+                require(totalInstantUnstaked <= currentWithheldETH, "Insufficient funds to cover deficit");
             }
             require(remainingToUnstake == 0, "Not enough funds unstaked");
         }
