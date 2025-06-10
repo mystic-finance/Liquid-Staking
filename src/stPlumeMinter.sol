@@ -204,7 +204,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         request.timestamp = 0;
         request.deficit = 0;
 
-        if(totalAmount > currentWithheldETH){
+        if(amount > currentWithheldETH){
             uint256 balanceBefore = address(this).balance;
             plumeStaking.withdraw();
             uint256 balanceAfter = address(this).balance;
@@ -214,10 +214,11 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
             fee = totalAmount * INSTANT_REDEMPTION_FEE / RATIO_PRECISION;
             withdrawn = amount;
             currentWithheldETH -= amount;
-            totalInstantUnstaked -= totalAmount;
+            totalInstantUnstaked -= amount;
         }
 
         currentWithheldETH -= totalAmount - amount; // remove deficit from currentWithHeldEth as buffer
+        totalInstantUnstaked -= totalAmount - amount;
         uint256 cachedWithheldETH = currentWithheldETH;
         currentWithheldETH += withdrawn;
         currentWithheldETH -= amount; //net must be > 0
