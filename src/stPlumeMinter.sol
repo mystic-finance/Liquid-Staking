@@ -204,7 +204,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         request.timestamp = 0;
         request.deficit = 0;
 
-        if(amount >= currentWithheldETH){
+        if(totalAmount > currentWithheldETH){
             uint256 balanceBefore = address(this).balance;
             plumeStaking.withdraw();
             uint256 balanceAfter = address(this).balance;
@@ -227,7 +227,10 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
             require(amount-withdrawn < fee, "Insufficient funds to cover deficit");
             currentWithheldETH += amount - withdrawn; // net must be > 0
             withHoldEth -= amount - withdrawn; // reduce fee since some covered by withdrawal fee
+        }else if(withdrawn > amount){
+            totalInstantUnstaked += withdrawn - amount;
         }
+
         totalUnstaked -= totalAmount;
         require(currentWithheldETH >= cachedWithheldETH, "Insufficient funds to cover deficit as new currentWithheldETH must be net positive");
         // withdrawal fee can also cover fee paid on withdrawal (set by the team
@@ -480,7 +483,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         require(withdrawalRequests[msg.sender].amount == 0, "Withdrawal already requested");
     
         // Check if we can cover this with withheld ETH
-        if (currentWithheldETH > amount && currentWithheldETH > amount + totalInstantUnstaked) { //instant redemption
+        if (currentWithheldETH >= amount && currentWithheldETH >= amount + totalInstantUnstaked) { //instant redemption
             amountUnstaked = amount;
             cooldownTimestamp = block.timestamp;
             totalInstantUnstaked += amount;
@@ -491,8 +494,10 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
             if(_validatorId != 0){
                 (bool active, ,uint256 stakedAmount,) = plumeStaking.getValidatorStats(uint16(_validatorId));
                 uint256 validatorStakedAmount = plumeStaking.getUserValidatorStake(address(this), uint16(_validatorId));
-                require(active && stakedAmount >= validatorStakedAmount && validatorStakedAmount + currentWithheldETH >= remainingToUnstake, "Validator cannot fulfill the unstake request");
-                uint256 unstakeAmountFromValidator = remainingToUnstake > validatorStakedAmount ? validatorStakedAmount : remainingToUnstake;
+                uint256 remainingUnstaked = validatorStakedAmount - totalQueuedWithdrawalsPerValidator[_validatorId];
+                require(active && stakedAmount >= validatorStakedAmount && remainingUnstaked + currentWithheldETH >= remainingToUnstake, "Validator cannot fulfill the unstake request");
+                
+                uint256 unstakeAmountFromValidator = remainingToUnstake > remainingUnstaked ? remainingUnstaked : remainingToUnstake;
                 totalQueuedWithdrawalsPerValidator[_validatorId] += unstakeAmountFromValidator; //new
                 amountUnstaked += unstakeAmountFromValidator;
                 remainingToUnstake -= unstakeAmountFromValidator;
@@ -509,10 +514,11 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
                 require(validatorId > 0, "Validator does not exist");
                 (bool active, ,uint256 stakedAmount,) = plumeStaking.getValidatorStats(uint16(validatorId));
                 uint256 validatorStakedAmount = plumeStaking.getUserValidatorStake(address(this), uint16(validatorId));
-
-                if (active && stakedAmount > 0 && validatorStakedAmount > 0 && validatorStakedAmount <= stakedAmount) {
+                uint256 remainingUnstaked = validatorStakedAmount - totalQueuedWithdrawalsPerValidator[uint16(validatorId)];
+                
+                if (active && stakedAmount > 0 && validatorStakedAmount > 0 && validatorStakedAmount <= stakedAmount && remainingUnstaked > 0 ) {
                     // Calculate how much to unstake from this validator
-                    uint256 unstakeAmountFromValidator = remainingToUnstake > validatorStakedAmount ? validatorStakedAmount : remainingToUnstake;
+                    uint256 unstakeAmountFromValidator = remainingToUnstake > remainingUnstaked ? remainingUnstaked : remainingToUnstake;
                     totalQueuedWithdrawalsPerValidator[uint16(validatorId)] += unstakeAmountFromValidator; //new
                     amountUnstaked += unstakeAmountFromValidator;
                     remainingToUnstake -= unstakeAmountFromValidator;
@@ -535,6 +541,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
                 deficit = amount - amountUnstaked;
                 // amountUnstaked += deficit;
                 remainingToUnstake -= deficit;
+                totalInstantUnstaked += deficit;
                 require(deficit <= currentWithheldETH, "Insufficient funds to cover deficit");
             }
             require(remainingToUnstake == 0, "Not enough funds unstaked");
