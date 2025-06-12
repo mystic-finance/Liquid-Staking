@@ -49,6 +49,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
     }
 
     struct UserRewards {
+        uint256 rewardInCycle;
         uint256 rewardsBefore;
         uint256 rewardsAccrued;
         uint256 lastCycleClaimed;
@@ -296,6 +297,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         uint256 balance = frxETHToken.balanceOf(user);
         userRewards[user].rewardsAccrued += _getCurrentUserYield(user, balance); //accrue reward to avoid reward loss
         userRewards[user].rewardsBefore = getYield();
+        userRewards[user].rewardInCycle = lastRewardAmount;
         userRewards[user].lastCycleClaimed = cycleRewards.length;
     }
 
@@ -312,6 +314,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         _unstake(yield, true, 0);
         userRewards[msg.sender].rewardsAccrued = 0;
         userRewards[msg.sender].rewardsBefore = getYield();
+        userRewards[msg.sender].rewardInCycle = lastRewardAmount;
         userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
         require(getUserRewards(msg.sender) == 0, "Rewards should be reset after unstaking");
         return yield;
@@ -334,7 +337,8 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         if (block.timestamp >= rewardsCycleEnd) {
             return rewardsEth;
         }
-        uint256 unlockedRewards = (lastRewardAmount * (block.timestamp - lastSync)) / (rewardsCycleEnd - lastSync);
+        uint256 maxTime = rewardsCycleEnd > block.timestamp ? block.timestamp : rewardsCycleEnd;
+        uint256 unlockedRewards = (lastRewardAmount * (maxTime - lastSync)) / (rewardsCycleEnd - lastSync);
         return rewardsEth - lastRewardAmount + unlockedRewards;
     }
 
@@ -342,7 +346,8 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         if (block.timestamp >= rewardsCycleEnd) {
             return (rewardsEth - lastRewardAmount , lastRewardAmount);
         }
-        uint256 unlockedRewards = (lastRewardAmount * (block.timestamp - lastSync)) / (rewardsCycleEnd - lastSync);
+        uint256 maxTime = rewardsCycleEnd > block.timestamp ? block.timestamp : rewardsCycleEnd;
+        uint256 unlockedRewards = (lastRewardAmount * (maxTime - lastSync)) / (rewardsCycleEnd - lastSync);
         return (rewardsEth - lastRewardAmount , unlockedRewards);
     }
 
@@ -378,16 +383,15 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         (uint256 accruedRewards, uint256 currentRewards) = _getSplitYield();
         uint256 totalSupply = frxETHToken.totalSupply();
         uint256 totalRewards = accruedRewards + currentRewards;
-        uint256 eligibleRewards = totalRewards > userRewards[user].rewardsBefore ? totalRewards - userRewards[user].rewardsBefore : 0;
-        if(eligibleRewards == 0){return 0;}
+        uint256 eligibleRewards = currentRewards <= userRewards[user].rewardInCycle ? userRewards[user].rewardInCycle - currentRewards : currentRewards;
 
         if (totalSupply == 0) return 0;
         for (uint256 i = userLastCycle; i < cycleRewards.length; i++) {
             CycleRewards memory cycle = cycleRewards[i];
-            totalYield += (amount * cycle.rewards) / cycle.totalSupply;
+            if(cycle.totalSupply > 0) totalYield += (amount * cycle.rewards) / cycle.totalSupply;
         }
 
-        return totalYield + (currentRewards * amount / totalSupply);
+        return totalYield + (eligibleRewards * amount / totalSupply);
     }
 
     function normalizedAmount(address user, uint256 amount) public view returns (uint256) {
