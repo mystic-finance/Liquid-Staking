@@ -80,6 +80,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
     ) frxETHMinter(address(0), frxETHAddress, sfrxETHAddress, _owner, _timelock_address) {
         plumeStaking = IPlumeStaking(_plumeStaking);
         rewardsCycleLength = 7 days;
+        rewardsCycleEnd = uint32(block.timestamp + rewardsCycleLength);
         _setupRole(DEFAULT_ADMIN_ROLE, _owner);
         _setupRole(REBALANCER_ROLE, _owner);
         _setupRole(CLAIMER_ROLE, _owner);

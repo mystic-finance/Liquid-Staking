@@ -86,7 +86,7 @@ contract StPlumeMinterForkTest is Test {
         frxETHToken.addMinter(address(owner));
         vm.prank(owner);
         frxETHToken.updateStPlumeMinter(address(minter));
-        minter.syncRewards();
+        // minter.syncRewards();
     
     }
     
