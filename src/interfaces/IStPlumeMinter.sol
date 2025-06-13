@@ -34,7 +34,7 @@ interface IstPlumeMinter {
     function unstakeFromValidator(uint256 amount, uint16 validatorId) external returns (uint256 amountUnstaked);
     function restake(uint16 validatorId) external returns (uint256 amountRestaked);
     function unstakeGov(uint16 validatorId, uint256 amount) external returns (uint256 amountRestaked);
-    function withdrawGov(uint256 amount) external returns (uint256 amountRestaked);
+    function withdrawGov() external returns (uint256 amountRestaked);
     function stakeWitheld(uint256 amount) external returns (uint256 amountRestaked);
     function withdrawFee() external returns (uint256 amount);
     function withdraw(address recipient) external returns (uint256 amount);

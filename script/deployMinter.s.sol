@@ -6,27 +6,36 @@ import 'forge-std/console.sol';
 import {frxETH} from "../src/frxETH.sol";
 import {sfrxETH, ERC20} from "../src/sfrxETH.sol";
 import {stPlumeMinter} from "../src/stPlumeMinter.sol";
+import {OperatorRegistry} from "../src/OperatorRegistry.sol";
 
 contract Deploy is Script {
     address constant TIMELOCK_ADDRESS = 0x8412ebf45bAC1B340BbE8F318b928C466c4E39CA;
-    uint32 constant REWARDS_CYCLE_LENGTH = 3 days;
-    address constant PLUME_STAKING = 0xA20bfe49969D4a0E9abfdb6a46FeD777304ba07f;
+    uint32 constant REWARDS_CYCLE_LENGTH = 7 days;
+    address constant PLUME_STAKING = 0x30c791E4654EdAc575FA1700eD8633CB2FEDE871;
 
     function run() public {
         console.log('Deployer:', msg.sender);
         vm.startBroadcast();
 
         frxETH fe = new frxETH(msg.sender, TIMELOCK_ADDRESS);
-        sfrxETH sfe = new sfrxETH(ERC20(address(fe)), REWARDS_CYCLE_LENGTH);
-        stPlumeMinter fem = new stPlumeMinter(address(fe), address(sfe), msg.sender, TIMELOCK_ADDRESS, PLUME_STAKING);
+        // sfrxETH sfe = new sfrxETH(ERC20(address(fe)), REWARDS_CYCLE_LENGTH);
+        stPlumeMinter fem = new stPlumeMinter(address(fe), address(0), msg.sender, TIMELOCK_ADDRESS, PLUME_STAKING);
         
+        OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](5);
+        validators[0] = OperatorRegistry.Validator(1);
+        validators[1] = OperatorRegistry.Validator(2);
+        validators[2] = OperatorRegistry.Validator(3);
+        validators[3] = OperatorRegistry.Validator(4);
+        validators[4] = OperatorRegistry.Validator(5);
         // Post deploy
         console.log('Deployer:', msg.sender);
         fe.addMinter(address(fem));
+        fe.updateStPlumeMinter(address(fem));
+        fem.addValidators(validators);
 
         console.log("Minter deployed at", address(fem));
         console.log("Minter added to frxETH at", address(fe));
-        console.log("Minter added to sfrxETH at", address(sfe));
+        // console.log("Minter added to sfrxETH at", address(sfe));
         
         vm.stopBroadcast();
     }

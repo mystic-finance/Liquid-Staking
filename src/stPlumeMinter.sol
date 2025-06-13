@@ -159,7 +159,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         }
     }
 
-    function withdrawGov(uint256 amount) external nonReentrant onlyByOwnGov returns (uint256 amountWithdrawn) {
+    function withdrawGov() external nonReentrant onlyByOwnGov returns (uint256 amountWithdrawn) {
         _rebalance();
         uint256 balanceBefore = address(this).balance;
         plumeStaking.withdraw();
@@ -168,7 +168,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         amountWithdrawn = balanceAfter - balanceBefore;
     }
 
-    /// @notice Restake from cooling/parked funds to a specific validator
+    /// @notice Restake from withheld funds
     function stakeWitheld(uint256 amount) external nonReentrant onlyRole(REBALANCER_ROLE) returns (uint256 amountRestaked) {
         _rebalance();
         currentWithheldETH -= amount;
@@ -178,7 +178,16 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         return amount;
     }
 
-    /// @notice Withdraw withheld ETH
+    function stakeWitheldForValidator(uint256 amount, uint16 validatorId) external nonReentrant onlyRole(REBALANCER_ROLE) returns (uint256 amountRestaked) {
+        _rebalance();
+        currentWithheldETH -= amount;
+        _depositEther(amount, validatorId);
+        
+        emit ETHSubmitted(address(this), address(this), amount, validatorId);
+        return amount;
+    }
+
+    /// @notice Withdraw protocol fee
     function withdrawFee() external nonReentrant onlyByOwnGov returns (uint256 amount) {
         _rebalance();
         (bool success,) = address(owner).call{value: withHoldEth}("");

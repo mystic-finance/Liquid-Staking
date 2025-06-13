@@ -813,7 +813,29 @@ contract StPlumeMinterForkTest is Test {
         
         // Stake withheld ETH
         vm.prank(owner);
-        uint256 staked = minter.stakeWitheld(3 ether);
+        uint256 staked = minter.stakeWitheld(3 ether); //stakeWitheldForValidator
+        
+        // Verify staking
+        assertEq(staked, 3 ether);
+        assertLt(minter.currentWithheldETH(), 2.1 ether);
+    }
+
+    function test_stake_withheld_validator() public {
+        // First ensure there's withheld ETH
+        vm.startPrank(owner);
+        minter.setWithholdRatio(500000); // 50%
+        vm.stopPrank();
+        
+        // Submit ETH with 50% withheld
+        vm.prank(user1);
+        minter.submit{value: 10 ether}();
+        
+        // Verify withheld amount
+        assertEq(minter.currentWithheldETH(), 5 ether);
+        
+        // Stake withheld ETH
+        vm.prank(owner);
+        uint256 staked = minter.stakeWitheldForValidator(3 ether, 0); //stakeWitheldForValidator
         
         // Verify staking
         assertEq(staked, 3 ether);
@@ -1150,7 +1172,9 @@ contract StPlumeMinterForkTest is Test {
         
         // 3. Fast forward to end of rewards cycle
         vm.warp(minter.rewardsCycleEnd() + 1);
-        vm.startPrank(owner);
+        minter.loadRewards{value: 2 ether}();
+        vm.warp(minter.rewardsCycleEnd() + 1);
+        // vm.startPrank(owner);
         minter.syncRewards();
         
         // 4. Unstake half of the initial deposit
@@ -1172,6 +1196,7 @@ contract StPlumeMinterForkTest is Test {
         assertLt(withdrawn, unstakeAmount, "Withdrawn amount should be less than unstaked due to fees");
         
         // 6. Check user rewards and unstake them
+
         uint256 userRewards = minter.getUserRewards(user1);
         uint256 rewardsUnstaked = minter.unstakeRewards();
         
@@ -1179,7 +1204,7 @@ contract StPlumeMinterForkTest is Test {
         assertApproxEqAbs(rewardsUnstaked, userRewards, 0.0001 ether, "Unstaked rewards don't match expected user rewards");
         assertGt(rewardsUnstaked, 0, "zero rewards");
         // 7. Wait for cooldown and withdraw rewards
-        vm.warp(block.timestamp + 20 days);
+        vm.warp(minter.nextBatchUnstakeTimePerValidator(1));
         vm.startPrank(owner);
         minter.processBatchUnstake();
 
@@ -2168,7 +2193,7 @@ contract StPlumeMinterForkTest is Test {
         vm.warp(block.timestamp + 30 days);
         uint256 balanceBefore = address(minter).balance;
         uint currentWithheldETHBefore = minter.currentWithheldETH();
-        uint256 amountWithdrawn = minter.withdrawGov(0);
+        uint256 amountWithdrawn = minter.withdrawGov();
         uint256 balanceAfter = address(minter).balance;
         uint currentWithheldETH = minter.currentWithheldETH();
         vm.stopPrank();
