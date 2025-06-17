@@ -316,3 +316,14 @@ function unstakeRewards() external nonReentrant returns (uint256 yield) {
 - Reward Claiming: Users can claim rewards by calling unstakeRewards()
 
 The system ensures that rewards are fairly distributed to frxETH token holders based on their balance and participation in the protocol, while maintaining the protocol's sustainability through fee collection.
+
+
+
+## New Staking Scope
+You can find the codebase here: https://github.com/mystic-finance/Liquid-Staking/tree/staked-plume
+
+The key components include:
+- Core contracts (~500 LOC) in src/: stPlumeMinter.sol, frxETH.sol, frxEthMinter.sol, and OperatorRegistry.sol
+- Withdrawal and rewards management script in automation/
+- Tests in tests/fork/ with main test of stPlumeMinter.t.sol
+- Deployment script in script/ with DeployMinter.s.sol as the main deployment file
