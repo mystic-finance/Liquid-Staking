@@ -53,17 +53,6 @@ contract frxETH is ERC20PermitPermissionedMint {
     }
   }
 
-  function _afterTokenTransfer(
-        address from,
-        address to,
-        uint256 amount
-  ) internal override {
-    if(stPlumeMinter != address(0)){
-      if(!(from == address(0) || from == address(this))) IstPlumeMinter(stPlumeMinter).handleTokenTransfer(from);
-      if(!(to == address(0) || to == address(this))) IstPlumeMinter(stPlumeMinter).handleTokenTransfer(to);
-    }
-  }
-
   function updateStPlumeMinter(address _stPlumeMinter) external onlyOwner {
     stPlumeMinter = _stPlumeMinter;
   }
