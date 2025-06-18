@@ -305,9 +305,10 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
 
     function handleTokenTransfer(address user) external onlyRole(HANDLER_ROLE) {
         uint256 balance = frxETHToken.balanceOf(user);
+        (,uint256 currentRewards) = _getSplitYield();
         userRewards[user].rewardsAccrued += _getCurrentUserYield(user, balance); //accrue reward to avoid reward loss
         userRewards[user].rewardsBefore = getYield();
-        userRewards[user].rewardInCycle = lastRewardAmount;
+        userRewards[user].rewardInCycle = currentRewards;
         userRewards[user].lastCycleClaimed = cycleRewards.length;
     }
 
@@ -322,9 +323,11 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         yield = getUserRewards(msg.sender);
         if(yield == 0){return 0;}
         _unstake(yield, true, 0);
+
+        (,uint256 currentRewards) = _getSplitYield();
         userRewards[msg.sender].rewardsAccrued = 0;
         userRewards[msg.sender].rewardsBefore = getYield();
-        userRewards[msg.sender].rewardInCycle = lastRewardAmount;
+        userRewards[msg.sender].rewardInCycle = currentRewards;
         userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
         require(getUserRewards(msg.sender) == 0, "Rewards should be reset after unstaking");
         return yield;
@@ -393,7 +396,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         (uint256 accruedRewards, uint256 currentRewards) = _getSplitYield();
         uint256 totalSupply = frxETHToken.totalSupply();
         uint256 totalRewards = accruedRewards + currentRewards;
-        uint256 eligibleRewards = currentRewards <= userRewards[user].rewardInCycle ? userRewards[user].rewardInCycle - currentRewards : currentRewards;
+        uint256 eligibleRewards = currentRewards - userRewards[user].rewardInCycle;
 
         if (totalSupply == 0) return 0;
         for (uint256 i = userLastCycle; i < cycleRewards.length; i++) {
