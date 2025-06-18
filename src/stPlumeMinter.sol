@@ -396,7 +396,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         (uint256 accruedRewards, uint256 currentRewards) = _getSplitYield();
         uint256 totalSupply = frxETHToken.totalSupply();
         uint256 totalRewards = accruedRewards + currentRewards;
-        uint256 eligibleRewards = currentRewards - userRewards[user].rewardInCycle;
+        uint256 eligibleRewards = currentRewards > userRewards[user].rewardInCycle ? currentRewards - userRewards[user].rewardInCycle : 0;
 
         if (totalSupply == 0) return 0;
         for (uint256 i = userLastCycle; i < cycleRewards.length; i++) {
