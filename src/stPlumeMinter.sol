@@ -24,17 +24,23 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
     uint256 public REDEMPTION_FEE = 150; // 0.015%
     uint256 public INSTANT_REDEMPTION_FEE = 5000; // 0.5%
     uint256 public withHoldEth; //protocol fee
-    uint256 public yieldEth; //reward accrued + future next rewards
-    uint256 public rewardsEth; //current rewards across cycles
+    // uint256 public yieldEth; //reward accrued + future next rewards
+    // uint256 public rewardsEth; //current rewards across cycles
     uint32 public rewardsCycleLength; // reward cycle length
-    uint32 public lastSync;
-    uint32 public rewardsCycleEnd;
-    uint256 public lastRewardAmount; // reward in this unfinished cycle
+    // uint32 public lastSync;
+    // uint32 public rewardsCycleEnd;
+    // uint256 public lastRewardAmount; // reward in this unfinished cycle
+
     uint256 public minStake = 1e16;
     uint256 public withdrawalQueueThreshold = 100 ether;
     uint256 public batchUnstakeInterval = 3 days;
     uint256 public totalInstantUnstaked;
     uint256 public totalUnstaked;
+
+    uint256 public lastUpdateTime;
+    uint256 public rewardRate; // ETH per second
+    uint256 public periodFinish;
+    uint256 public rewardPerTokenStored;
 
     
     struct WithdrawalRequest {
@@ -42,26 +48,28 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         uint256 deficit;
         uint256 timestamp;
     }
-    struct CycleRewards {
-        uint256 rewards;
-        uint256 totalSupply;
-        uint32 cycleEnd;
-    }
+    // struct CycleRewards {
+    //     uint256 rewards;
+    //     uint256 totalSupply;
+    //     uint32 cycleEnd;
+    // }
 
-    struct UserRewards {
-        uint256 rewardInCycle;
-        uint256 rewardsBefore;
-        uint256 rewardsAccrued;
-        uint256 lastCycleClaimed;
-    }
+    // struct UserRewards {
+    //     uint256 rewardInCycle;
+    //     uint256 rewardsBefore;
+    //     uint256 rewardsAccrued;
+    //     uint256 lastCycleClaimed;
+    // }
 
-    CycleRewards[] public cycleRewards;
+    // CycleRewards[] public cycleRewards;
     address public nativeToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     mapping(address => WithdrawalRequest) public withdrawalRequests;
-    mapping(address => UserRewards) public userRewards;
+    // mapping(address => UserRewards) public userRewards;
     mapping (uint16 => uint256) public maxValidatorPercentage;
     mapping (uint16 => uint256) public totalQueuedWithdrawalsPerValidator;
     mapping (uint16 => uint256) public nextBatchUnstakeTimePerValidator;
+    mapping(address => uint256) public userRewardPerTokenPaid;
+    mapping(address => uint256) public rewards; // Claimable ETH rewards for users
     IPlumeStaking plumeStaking;
     // Events
     event Unstaked(address indexed user, uint256 amount);
@@ -80,11 +88,54 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
     ) frxETHMinter(address(0), frxETHAddress, sfrxETHAddress, _owner, _timelock_address) {
         plumeStaking = IPlumeStaking(_plumeStaking);
         rewardsCycleLength = 7 days;
-        rewardsCycleEnd = uint32(block.timestamp + rewardsCycleLength);
+        // rewardsCycleEnd = uint32(block.timestamp + rewardsCycleLength);
+        // lastUpdateTime = block.timestamp; // Initialize lastUpdateTime
+        // periodFinish = block.timestamp;
         _setupRole(DEFAULT_ADMIN_ROLE, _owner);
         _setupRole(REBALANCER_ROLE, _owner);
         _setupRole(CLAIMER_ROLE, _owner);
         _setupRole(HANDLER_ROLE, frxETHAddress);
+    }
+
+    modifier updateReward(address account) {
+        _updateReward(account);
+        _;
+    }
+
+    function _updateReward(address account) internal {
+        rewardPerTokenStored = rewardPerToken();
+        lastUpdateTime = lastTimeRewardApplicable();
+        if (account != address(0)) {
+            rewards[account] = earned(account);
+            userRewardPerTokenPaid[account] = rewardPerTokenStored;
+        }
+    }
+
+    function lastTimeRewardApplicable() public view returns (uint256) {
+        return block.timestamp < periodFinish ? block.timestamp : periodFinish;
+    }
+
+    function rewardPerToken() public view returns (uint256) {
+        uint256 currentTotalSupply = frxETHToken.totalSupply();
+        if (currentTotalSupply == 0) {
+            return rewardPerTokenStored;
+        }
+        return
+            rewardPerTokenStored +
+            (((lastTimeRewardApplicable() - lastUpdateTime) * rewardRate * 1e18) /
+            currentTotalSupply);
+    }
+
+    function earned(address account) public view returns (uint256) {
+        uint256 accountBalance = frxETHToken.balanceOf(account);
+        return
+            ((accountBalance * (rewardPerToken() - userRewardPerTokenPaid[account])) /
+            1e18) +
+            rewards[account];
+    }
+
+    function getRewardForDuration() public view returns (uint256) {
+        return rewardRate * rewardsCycleLength;
     }
 
     function addValidator(Validator calldata validator) public override onlyByOwnGov {
@@ -304,31 +355,19 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
     }
 
     function handleTokenTransfer(address user) external onlyRole(HANDLER_ROLE) {
-        uint256 balance = frxETHToken.balanceOf(user);
-        (,uint256 currentRewards) = _getSplitYield();
-        userRewards[user].rewardsAccrued += _getCurrentUserYield(user, balance); //accrue reward to avoid reward loss
-        userRewards[user].rewardsBefore = getYield();
-        userRewards[user].rewardInCycle = currentRewards;
-        userRewards[user].lastCycleClaimed = cycleRewards.length;
+        _updateReward(user);
     }
 
     function getUserRewards(address user) public view returns (uint256 yield) {
-        uint256 balance = frxETHToken.balanceOf(user);
-        yield = normalizedAmount(user, balance) - balance;
+        yield = earned(user);
     }
 
     /// @notice Unstake rewards
-    function unstakeRewards() external nonReentrant returns (uint256 yield) {
+    function unstakeRewards() updateReward(msg.sender) external nonReentrant returns (uint256 yield) {
         _rebalance();
-        yield = getUserRewards(msg.sender);
+        yield = rewards[msg.sender];
         if(yield == 0){return 0;}
         _unstake(yield, true, 0);
-
-        (,uint256 currentRewards) = _getSplitYield();
-        userRewards[msg.sender].rewardsAccrued = 0;
-        userRewards[msg.sender].rewardsBefore = getYield();
-        userRewards[msg.sender].rewardInCycle = currentRewards;
-        userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
         require(getUserRewards(msg.sender) == 0, "Rewards should be reset after unstaking");
         return yield;
     }
@@ -346,32 +385,27 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         }
     }
 
-    function getYield() public view returns (uint256) {
-        if (block.timestamp >= rewardsCycleEnd) {
-            return rewardsEth;
-        }
-        uint256 maxTime = rewardsCycleEnd > block.timestamp ? block.timestamp : rewardsCycleEnd;
-        uint256 unlockedRewards = (lastRewardAmount * (maxTime - lastSync)) / (rewardsCycleEnd - lastSync);
-        return rewardsEth - lastRewardAmount + unlockedRewards;
-    }
-
-    function _getSplitYield() internal view returns (uint256, uint256) {
-        if (block.timestamp >= rewardsCycleEnd) {
-            return (rewardsEth - lastRewardAmount , lastRewardAmount);
-        }
-        uint256 maxTime = rewardsCycleEnd > block.timestamp ? block.timestamp : rewardsCycleEnd;
-        uint256 unlockedRewards = (lastRewardAmount * (maxTime - lastSync)) / (rewardsCycleEnd - lastSync);
-        return (rewardsEth - lastRewardAmount , unlockedRewards);
-    }
-
     function _loadRewards (uint256 amount) internal {
-        if(amount > 0){
-            uint256 yieldAmount = amount * YIELD_FEE / RATIO_PRECISION;
-            yieldEth += amount - yieldAmount;
-            withHoldEth += yieldAmount;
-            _depositEther(amount - yieldAmount, 0);
+        _updateReward(address(0));
+        if(amount ==0) return;
+        if(block.timestamp >= periodFinish) {
+            rewardRate = amount / rewardsCycleLength;
+        } else {
+            uint256 remaining = periodFinish - block.timestamp;
+            uint256 leftover = remaining * rewardRate;
+            rewardRate = amount + leftover / rewardsCycleLength;
         }
-        if (block.timestamp >= rewardsCycleEnd) { syncRewards(); }
+
+        // Ensure the provided reward amount is not more than the balance in the contract.
+        // This keeps the reward rate in the right range, preventing overflows due to
+        // very high values of rewardRate in the earned and rewardsPerToken functions;
+        // Reward + leftover must be less than 2^256 / 10^18 to avoid overflow.
+        uint balance = frxETHToken.totalSupply();
+        require(rewardRate <= balance / rewardsCycleLength, "Provided reward too high");
+
+        lastUpdateTime = block.timestamp;
+        periodFinish = block.timestamp + rewardsCycleLength;
+        _depositEther(amount, 0);
     }
 
     function _getValidatorInfo(uint16 validatorId) internal view returns (uint256, uint256 capacity) {
@@ -389,27 +423,9 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         return (validatorId, 0);
     }
 
-
-    function _getCurrentUserYield(address user, uint256 amount) internal view returns (uint256) {
-        uint256 totalYield = 0;
-        uint256 userLastCycle = userRewards[user].lastCycleClaimed;
-        (uint256 accruedRewards, uint256 currentRewards) = _getSplitYield();
-        uint256 totalSupply = frxETHToken.totalSupply();
-        uint256 totalRewards = accruedRewards + currentRewards;
-        uint256 eligibleRewards = currentRewards > userRewards[user].rewardInCycle ? currentRewards - userRewards[user].rewardInCycle : 0;
-
-        if (totalSupply == 0) return 0;
-        for (uint256 i = userLastCycle; i < cycleRewards.length; i++) {
-            CycleRewards memory cycle = cycleRewards[i];
-            if(cycle.totalSupply > 0) totalYield += (amount * cycle.rewards) / cycle.totalSupply;
-        }
-
-        return totalYield + (eligibleRewards * amount / totalSupply);
-    }
-
-    function normalizedAmount(address user, uint256 amount) public view returns (uint256) {
-        return amount + userRewards[user].rewardsAccrued + _getCurrentUserYield(user, amount);
-    }
+    // function normalizedAmount(address user, uint256 amount) public view returns (uint256) {
+    //     return amount + userRewards[user].rewardsAccrued + _getCurrentUserYield(user, amount);
+    // }
 
     /// @notice Get validator statistics
     function getValidatorStats(uint16 validatorId) external view returns (bool active, uint256 commission, uint256 totalStaked, uint256 stakersCount) {
@@ -596,18 +612,21 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
 
     /// @notice Rebalance the contract
     function _rebalance() internal {
+        _updateReward(msg.sender);
         uint256 amount = _claim();
         _loadRewards(amount);
     }
 
     /// @notice Submit ETH to the contract
     function _submit(address recipient) internal override returns (uint256 amount) {
+        _rebalance();
         amount = super._submit(recipient);
         require(amount >= minStake, "not enough to stake");
         _depositEther(amount, 0);
     }
 
     function _submit(address recipient, uint16 validatorId) internal returns (uint256 amount) {
+        _rebalance();
         amount = super._submit(recipient);
         require(amount >= minStake, "not enough to stake");
         _depositEther(amount, validatorId);
@@ -637,25 +656,25 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         return false;
     }
 
-    function syncRewards() public virtual {
-        uint256 timestamp = block.timestamp;
-        require(timestamp >= rewardsCycleEnd, "Not in rewards cycle");
-        require(yieldEth >= rewardsEth, "Negative rewards");
+    // function syncRewards() public virtual {
+    //     uint256 timestamp = block.timestamp;
+    //     require(timestamp >= rewardsCycleEnd, "Not in rewards cycle");
+    //     require(yieldEth >= rewardsEth, "Negative rewards");
     
-        uint256 nextRewards = yieldEth - rewardsEth;
-        rewardsEth += nextRewards;
-        cycleRewards.push(CycleRewards({
-            rewards: lastRewardAmount,
-            totalSupply: frxETHToken.totalSupply(),
-            cycleEnd: rewardsCycleEnd
-        }));
+    //     uint256 nextRewards = yieldEth - rewardsEth;
+    //     rewardsEth += nextRewards;
+    //     cycleRewards.push(CycleRewards({
+    //         rewards: lastRewardAmount,
+    //         totalSupply: frxETHToken.totalSupply(),
+    //         cycleEnd: rewardsCycleEnd
+    //     }));
         
-        uint256 end = timestamp + rewardsCycleLength;
+    //     uint256 end = timestamp + rewardsCycleLength;
 
-        lastRewardAmount = nextRewards;
-        lastSync = uint32(timestamp);
-        rewardsCycleEnd = uint32(end);
-    }
+    //     lastRewardAmount = nextRewards;
+    //     lastSync = uint32(timestamp);
+    //     rewardsCycleEnd = uint32(end);
+    // }
 
     function setYieldFee(uint256 newFee) external onlyByOwnGov {
         require(newFee <= 500000, "Yield fee capped at 50%");
