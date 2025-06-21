@@ -9,11 +9,13 @@ import "../../src/sfrxETH.sol";
 import "../../src/OperatorRegistry.sol";
 // import "../../src/DepositContract.sol";
 import { IPlumeStaking } from "../../src/interfaces/IPlumeStaking.sol";
+import { stPlumeRewards } from "../../src/stPlumeRewards.sol";
 import { PlumeStakingStorage } from "../../src/interfaces/PlumeStakingStorage.sol";
 
 
 contract StPlumeMinterForkTest is Test {
     stPlumeMinter minter;
+    stPlumeRewards minterRewards;
     frxETH frxETHToken;
     sfrxETH sfrxETHToken;
     OperatorRegistry registry;
@@ -53,8 +55,8 @@ contract StPlumeMinterForkTest is Test {
         
         // Fund the mock with ETH for withdrawals
         vm.deal(address(mockPlumeStaking), 100 ether);
-        vm.deal(address(user1), 100 ether);
-        vm.deal(address(user2), 100 ether);
+        vm.deal(address(user1), 10000 ether);
+        vm.deal(address(user2), 10000 ether);
         vm.deal(address(owner), 1000 ether);
         
         // Deploy contracts
@@ -62,7 +64,7 @@ contract StPlumeMinterForkTest is Test {
         sfrxETHToken = new sfrxETH(ERC20(address(frxETHToken)), 1000); // 1000 second rewards cycle
         
         // Deploy minter
-        vm.prank(owner);
+        vm.startPrank(owner);
         minter = new stPlumeMinter(
             address(frxETHToken),
             address(sfrxETHToken),
@@ -70,6 +72,12 @@ contract StPlumeMinterForkTest is Test {
             timelock,
             address(mockPlumeStaking)
         );
+        minterRewards = new stPlumeRewards(
+            address(frxETHToken),
+            address(minter),
+            owner
+        );
+        minter.setStPlumeRewards(address(minterRewards));
 
         OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](5);
         validators[0] = OperatorRegistry.Validator(1);
@@ -78,16 +86,12 @@ contract StPlumeMinterForkTest is Test {
         validators[3] = OperatorRegistry.Validator(4);
         validators[4] = OperatorRegistry.Validator(5);
         
-        vm.prank(owner);
         minter.addValidators(validators);
-        vm.prank(owner);
         frxETHToken.addMinter(address(minter));
-        vm.prank(owner);
         frxETHToken.addMinter(address(owner));
-        vm.prank(owner);
-        frxETHToken.updateStPlumeMinter(address(minter));
-        // minter.syncRewards();
-    
+        frxETHToken.updateStPlumeRewards(address(minterRewards));
+
+        vm.stopPrank();
     }
     
     // Tests for basic roles and configuration
@@ -152,7 +156,7 @@ contract StPlumeMinterForkTest is Test {
         // First, add some ETH to the minter contract
 
         uint256 user1Balance = address(user1).balance;
-        assertEq(user1Balance, 100 ether);
+        assertEq(user1Balance, 10000 ether);
         vm.prank(user1);
         minter.submit{value: 32 ether}();
 
@@ -606,20 +610,20 @@ contract StPlumeMinterForkTest is Test {
         vm.startPrank(owner);
         
         // Test yield fee setting
-        minter.setFees(100, 100, 2000); // 20%
-        assertEq(minter.YIELD_FEE(), 2000);
+        minterRewards.setYieldFee(2000); // 20%
+        assertEq(minterRewards.YIELD_FEE(), 2000);
         
         // Test redemption fees setting
-        minter.setFees(10001, 500, 1000); // 1% instant, 0.05% standard
+        minter.setFees(10001, 500); // 1% instant, 0.05% standard
         assertEq(minter.INSTANT_REDEMPTION_FEE(), 10001);
         assertEq(minter.REDEMPTION_FEE(), 500);
         
         // Test fee limits
         vm.expectRevert();
-        minter.setFees(100, 100, 500001); // Over 50%
+        minterRewards.setYieldFee(500001); // Over 50%
         
         vm.expectRevert();
-        minter.setFees(10000001, 5, 100); // Instant fee too high
+        minter.setFees(10000001, 5); // Instant fee too high
         
         vm.stopPrank();
     }
@@ -627,12 +631,12 @@ contract StPlumeMinterForkTest is Test {
     function test_rewards_cycle() public {
         // Test rewards cycle length setting
         vm.startPrank(owner);
-        minter.setRewardsCycleLength(14 days, 1e17);
-        assertEq(minter.rewardsCycleLength(), 14 days);
+        minterRewards.setRewardsCycleLength(14 days);
+        assertEq(minterRewards.rewardsCycleLength(), 14 days);
         
         // Test invalid cycle length
         vm.expectRevert();
-        minter.setRewardsCycleLength(400 days, 1e17); // Too long
+        minterRewards.setRewardsCycleLength(400 days); // Too long
         
         vm.stopPrank();
         
@@ -666,8 +670,8 @@ contract StPlumeMinterForkTest is Test {
         minter.claim(1);
         
         // Fast forward to end of rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.syncRewards();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.syncRewards();
         
         // User withdraws rewards
         vm.prank(user1);
@@ -686,12 +690,12 @@ contract StPlumeMinterForkTest is Test {
     // function test_rewards_cycle() public {
     //     // Test rewards cycle length setting
     //     vm.startPrank(owner);
-    //     minter.setRewardsCycleLength(14 days);
-    //     assertEq(minter.rewardsCycleLength(), 14 days);
+    //     minterRewards.setRewardsCycleLength(14 days);
+    //     assertEq(minterRewards.rewardsCycleLength(), 14 days);
         
     //     // Test invalid cycle length
     //     vm.expectRevert();
-    //     minter.setRewardsCycleLength(91 days); // Too long
+    //     minterRewards.setRewardsCycleLength(91 days); // Too long
         
     //     vm.stopPrank();
         
@@ -723,10 +727,10 @@ contract StPlumeMinterForkTest is Test {
     //     minter.claim(1);
         
     //     // Fast forward to end of rewards cycle
-    //     vm.warp(block.timestamp + minter.rewardsCycleLength() + 1);
+    //     vm.warp(block.timestamp + minterRewards.rewardsCycleLength() + 1);
         
     //     // Sync rewards
-    //     minter.syncRewards();
+    //     minterRewards.syncRewards();
         
     //     // User withdraws rewards
     //     vm.prank(user1);
@@ -846,7 +850,7 @@ contract StPlumeMinterForkTest is Test {
         // First generate some fees
         vm.startPrank(owner);
         minter.setWithholdRatio(500000); // 50%
-        minter.setFees(100, 100, 200000); // 20%
+        minterRewards.setYieldFee(200000); // 20%
         vm.stopPrank();
         
         // Submit ETH to generate withhold fees
@@ -885,14 +889,14 @@ contract StPlumeMinterForkTest is Test {
         minter.claim(1);
         
         // Fast forward to end of rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.syncRewards();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.syncRewards();
         
         // Test yield functions
         // uint256 totalYield = minter.getYield();
         // assert(totalYield >= 0);
         
-        uint256 userYield = minter.getUserRewards(user1);
+        uint256 userYield = minterRewards.getUserRewards(user1);
         assert(userYield >= 0);
         
         // uint256 normalizedAmount = minter.normalizedAmount(user1, 10 ether);
@@ -973,15 +977,15 @@ contract StPlumeMinterForkTest is Test {
         vm.startPrank(owner);
         
         // Initial fee should match default
-        assertEq(minter.YIELD_FEE(), YIELD_FEE_DEFAULT);
+        assertEq(minterRewards.YIELD_FEE(), YIELD_FEE_DEFAULT);
         
         // Set new yield fee
-        minter.setFees(100, 100, 200000);
-        assertEq(minter.YIELD_FEE(), 200000);
+        minterRewards.setYieldFee(200000);
+        assertEq(minterRewards.YIELD_FEE(), 200000);
         
         // Test fee limit
         vm.expectRevert();
-        minter.setFees(100, 100, 500001);
+        minterRewards.setYieldFee(500001);
         
         vm.stopPrank();
     }
@@ -994,16 +998,16 @@ contract StPlumeMinterForkTest is Test {
         assertEq(minter.INSTANT_REDEMPTION_FEE(), INSTANT_REDEMPTION_FEE_DEFAULT);
         
         // Set new redemption fees
-        minter.setFees(800, 50, 100);
+        minter.setFees(800, 50);
         assertEq(minter.INSTANT_REDEMPTION_FEE(), 800);
         assertEq(minter.REDEMPTION_FEE(), 50);
         
         // Test fee limits
         vm.expectRevert();
-        minter.setFees(1000001, 50, 100);
+        minter.setFees(1000001, 50);
         
         vm.expectRevert();
-        minter.setFees(800, 1000001, 100);
+        minter.setFees(800, 1000001);
         
         vm.stopPrank();
     }
@@ -1012,7 +1016,7 @@ contract StPlumeMinterForkTest is Test {
         // Set up fees
         vm.startPrank(owner);
         minter.setWithholdRatio(100000); // 10%
-        minter.setFees(100,100,2000); // 20%
+        minterRewards.setYieldFee(2000); // 20%
         vm.stopPrank();
         
         // Submit ETH to generate withhold fees
@@ -1125,7 +1129,7 @@ contract StPlumeMinterForkTest is Test {
     //     // Record initial balances
     //     uint256 initialMinterBalance = address(minter).balance;
     //     uint256 initialWithheldETH = minter.currentWithheldETH();
-    //     uint256 initialYieldEth = minter.yieldEth();
+    //     uint256 initialYieldEth = minterRewards.yieldEth();
     //     uint256 initialWithHoldEth = minter.withHoldEth();
         
     //     // Generate rewards (simulate validator rewards)
@@ -1138,12 +1142,12 @@ contract StPlumeMinterForkTest is Test {
     //     assertGt(claimedAmount, 0, "No rewards were claimed");
         
     //     // Check balances after claiming
-    //     uint256 yieldFeeAmount = claimedAmount * minter.YIELD_FEE() / minter.RATIO_PRECISION();
+    //     uint256 yieldFeeAmount = claimedAmount * minterRewards.YIELD_FEE() / minter.RATIO_PRECISION();
     //     uint256 expectedYieldEth = initialYieldEth + (claimedAmount - yieldFeeAmount);
     //     uint256 expectedWithHoldEth = initialWithHoldEth + yieldFeeAmount;
         
     //     // Allow for small rounding differences
-    //     assertApproxEqAbs(minter.yieldEth(), expectedYieldEth, 0.0001 ether, "Yield ETH not increased correctly");
+    //     assertApproxEqAbs(minterRewards.yieldEth(), expectedYieldEth, 0.0001 ether, "Yield ETH not increased correctly");
     //     assertApproxEqAbs(minter.withHoldEth(), expectedWithHoldEth, 0.0001 ether, "Withheld ETH not increased correctly");
     // }
 
@@ -1171,11 +1175,11 @@ contract StPlumeMinterForkTest is Test {
         uint256 claimedAmount = minter.claim(1);
         
         // 3. Fast forward to end of rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.loadRewards{value: 2 ether}();
-        vm.warp(minter.rewardsCycleEnd() + 1);
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.loadRewards{value: 2 ether}();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
         // vm.startPrank(owner);
-        minter.syncRewards();
+        minterRewards.syncRewards();
         
         // 4. Unstake half of the initial deposit
         uint256 unstakeAmount = 5 ether;
@@ -1197,7 +1201,7 @@ contract StPlumeMinterForkTest is Test {
         
         // 6. Check user rewards and unstake them
 
-        uint256 userRewards = minter.getUserRewards(user1);
+        uint256 userRewards = minterRewards.getUserRewards(user1);
         uint256 rewardsUnstaked = minter.unstakeRewards();
         
         // Verify rewards unstaked
@@ -1293,12 +1297,12 @@ contract StPlumeMinterForkTest is Test {
         console.log("Final user frxETH balance:", finalFrxETHBalance);
         console.log("Final frxETH total supply:", finalFrxETHSupply);
         console.log("Final minter withheld ETH:", minter.currentWithheldETH());
-        console.log("Final minter yield ETH:", minter.yieldEth());
+        console.log("Final minter yield ETH:", minterRewards.yieldEth());
     }
 
     function test_loadRewards() public {
         // Initial state
-        uint256 initialYieldEth = minter.yieldEth();
+        uint256 initialYieldEth = minterRewards.yieldEth();
         uint256 initialWithHoldEth = minter.withHoldEth();
         uint256 initialFrxETHSupply = frxETHToken.totalSupply();
         
@@ -1312,51 +1316,52 @@ contract StPlumeMinterForkTest is Test {
         // Try to load rewards as non-owner (should fail)
         vm.startPrank(user1);
         vm.expectRevert(); // Should revert due to missing permission
-        minter.loadRewards{value: rewardAmount}();
+        minterRewards.loadRewards{value: rewardAmount}();
         vm.stopPrank();
         
         // Load rewards as owner
         vm.prank(owner);
-        uint256 loadedAmount = minter.loadRewards{value: rewardAmount}();
+        uint256 loadedAmount = minterRewards.loadRewards{value: rewardAmount}();
         
         // Verify loaded amount
         assertEq(loadedAmount, rewardAmount, "Loaded amount doesn't match input");
         
         // Calculate expected values
-        uint256 yieldFeeAmount = rewardAmount * minter.YIELD_FEE() / minter.RATIO_PRECISION();
+        uint256 yieldFeeAmount = rewardAmount * minterRewards.YIELD_FEE() / minter.RATIO_PRECISION();
         uint256 expectedYieldEth = initialYieldEth + (rewardAmount - yieldFeeAmount);
         uint256 expectedWithHoldEth = initialWithHoldEth + yieldFeeAmount;
-        console.log("lastRewardAmount", minter.lastRewardAmount());
-        console.log("rewardsEth", minter.rewardsEth());
-        console.log("yieldEth", minter.yieldEth());
+        console.log("lastRewardAmount", minterRewards.lastRewardAmount());
+        console.log("rewardsEth", minterRewards.rewardsEth());
+        console.log("yieldEth", minterRewards.yieldEth());
+        console.log("withHoldEth", minter.withHoldEth());
         
         // Verify balances after loading rewards
-        assertApproxEqAbs(minter.yieldEth(), expectedYieldEth, 0.0001 ether, "Yield ETH not increased correctly");
+        assertApproxEqAbs(minterRewards.yieldEth(), expectedYieldEth, 0.0001 ether, "Yield ETH not increased correctly");
         assertApproxEqAbs(minter.withHoldEth(), expectedWithHoldEth, 0.0001 ether, "Withheld ETH not increased correctly");
         
         // Verify frxETH supply remains unchanged (loading rewards doesn't mint new tokens)
         assertEq(frxETHToken.totalSupply(), initialFrxETHSupply + 10 ether, "frxETH supply should not change from loading rewards");
         
         // Fast forward to end of rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.syncRewards();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.syncRewards();
 
-        console.log("lastRewardAmount", minter.lastRewardAmount());
-        console.log("rewardsEth", minter.rewardsEth());
-        console.log("yieldEth", minter.yieldEth());
-        console.log("rewardsCycleEnd", minter.rewardsCycleEnd());
-        console.log("lastSync", minter.lastSync());
+        console.log("lastRewardAmount", minterRewards.lastRewardAmount());
+        console.log("rewardsEth", minterRewards.rewardsEth());
+        console.log("yieldEth", minterRewards.yieldEth());
+        console.log("rewardsCycleEnd", minterRewards.rewardsCycleEnd());
+        console.log("lastSync", minterRewards.lastSync());
         
         // Check that user1 has rewards available
         vm.warp(block.timestamp + 3 days);
-        minter.userRewards(user1);
-        uint256 userRewards = minter.getUserRewards(user1);
+        minterRewards.userRewards(user1);
+        uint256 userRewards = minterRewards.getUserRewards(user1);
         assertGt(userRewards, 0, "User should have rewards after loading and syncing");
 
-        vm.warp(minter.rewardsCycleEnd());
-        minter.userRewards(user1);
-        uint256 userRewards2 = minter.getUserRewards(user1);
-        assertGt(userRewards2, minter.rewardsEth() -1, "User should have rewards after loading and syncing");
+        vm.warp(minterRewards.rewardsCycleEnd());
+        minterRewards.userRewards(user1);
+        uint256 userRewards2 = minterRewards.getUserRewards(user1);
+        assertGt(userRewards2, minterRewards.rewardsEth() -1, "User should have rewards after loading and syncing");
         
         // Unstake rewards
         _updateBatchUnstake();
@@ -1394,7 +1399,7 @@ contract StPlumeMinterForkTest is Test {
 
     function test_loadRewards_1() public {
         // Initial state
-        uint256 initialYieldEth = minter.yieldEth();
+        uint256 initialYieldEth = minterRewards.yieldEth();
         uint256 initialWithHoldEth = minter.withHoldEth();
         uint256 initialFrxETHSupply = frxETHToken.totalSupply();
         
@@ -1407,58 +1412,58 @@ contract StPlumeMinterForkTest is Test {
         // Load rewards as owner
 
         vm.startPrank(owner);
-        uint256 loadedAmount = minter.loadRewards{value: rewardAmount}();
+        uint256 loadedAmount = minterRewards.loadRewards{value: rewardAmount}();
         
         // Verify loaded amount
         assertEq(loadedAmount, rewardAmount, "Loaded amount doesn't match input");
         
         // Calculate expected values
-        uint256 yieldFeeAmount = rewardAmount * minter.YIELD_FEE() / minter.RATIO_PRECISION();
+        uint256 yieldFeeAmount = rewardAmount * minterRewards.YIELD_FEE() / minter.RATIO_PRECISION();
         uint256 expectedYieldEth = initialYieldEth + (rewardAmount - yieldFeeAmount);
         uint256 expectedWithHoldEth = initialWithHoldEth + yieldFeeAmount;
-        console.log("lastRewardAmount", minter.lastRewardAmount());
-        console.log("rewardsEth", minter.rewardsEth());
-        console.log("yieldEth", minter.yieldEth());
+        console.log("lastRewardAmount", minterRewards.lastRewardAmount());
+        console.log("rewardsEth", minterRewards.rewardsEth());
+        console.log("yieldEth", minterRewards.yieldEth());
         
         // Verify balances after loading rewards
-        assertApproxEqAbs(minter.yieldEth(), expectedYieldEth, 0.0001 ether, "Yield ETH not increased correctly");
+        assertApproxEqAbs(minterRewards.yieldEth(), expectedYieldEth, 0.0001 ether, "Yield ETH not increased correctly");
         assertApproxEqAbs(minter.withHoldEth(), expectedWithHoldEth, 0.0001 ether, "Withheld ETH not increased correctly");
         
         // Verify frxETH supply remains unchanged (loading rewards doesn't mint new tokens)
         assertEq(frxETHToken.totalSupply(), initialFrxETHSupply + 100 ether, "frxETH supply should not change from loading rewards");
         
         // Fast forward to end of rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.syncRewards();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.syncRewards();
 
-        console.log("lastRewardAmount", minter.lastRewardAmount());
-        console.log("rewardsEth", minter.rewardsEth());
-        console.log("yieldEth", minter.yieldEth());
-        console.log("rewardsCycleEnd", minter.rewardsCycleEnd());
-        console.log("lastSync", minter.lastSync());
+        console.log("lastRewardAmount", minterRewards.lastRewardAmount());
+        console.log("rewardsEth", minterRewards.rewardsEth());
+        console.log("yieldEth", minterRewards.yieldEth());
+        console.log("rewardsCycleEnd", minterRewards.rewardsCycleEnd());
+        console.log("lastSync", minterRewards.lastSync());
         
         // Check that user1 has rewards available
         vm.warp(block.timestamp + 3 days);
-        minter.userRewards(user1);
-        minter.rewardsEth();
-        uint256 userRewards = minter.getUserRewards(user1);
+        minterRewards.userRewards(user1);
+        minterRewards.rewardsEth();
+        uint256 userRewards = minterRewards.getUserRewards(user1);
         assertGt(userRewards, 0, "User should have rewards after loading and syncing");
 
-        vm.warp(minter.rewardsCycleEnd());
-        minter.syncRewards();
-        minter.lastRewardAmount();
-        minter.rewardsEth();
-        minter.yieldEth();
-        minter.rewardsCycleEnd();
-        minter.lastSync();
-        minter.userRewards(user1);
-        uint256 userRewards2 = minter.getUserRewards(user1);
-        assertGt(userRewards2, minter.rewardsEth() -1, "User should have rewards after loading and syncing");
+        vm.warp(minterRewards.rewardsCycleEnd());
+        minterRewards.syncRewards();
+        minterRewards.lastRewardAmount();
+        minterRewards.rewardsEth();
+        minterRewards.yieldEth();
+        minterRewards.rewardsCycleEnd();
+        minterRewards.lastSync();
+        minterRewards.userRewards(user1);
+        uint256 userRewards2 = minterRewards.getUserRewards(user1);
+        assertGt(userRewards2, minterRewards.rewardsEth() -1, "User should have rewards after loading and syncing");
         
         // Unstake rewards
         _updateBatchUnstake();
         vm.startPrank(user1);
-        minter.getUserRewards(user1);
+        minterRewards.getUserRewards(user1);
         uint256 unstaked = minter.unstakeRewards();
         
         // Verify unstaked amount matches user rewards (within small margin)
@@ -1505,11 +1510,11 @@ contract StPlumeMinterForkTest is Test {
         minter.claim(1);
         
         // Fast forward to end of rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.syncRewards();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.syncRewards();
         
         // Check initial rewards
-        uint256 initialRewards = minter.getUserRewards(user1);
+        uint256 initialRewards = minterRewards.getUserRewards(user1);
         assert(initialRewards >= 0);
         
         // Submit more ETH from user1
@@ -1517,7 +1522,7 @@ contract StPlumeMinterForkTest is Test {
         minter.submit{value: 5 ether}();
         
         // Verify that previous rewards are preserved
-        uint256 newRewards = minter.getUserRewards(user1);
+        uint256 newRewards = minterRewards.getUserRewards(user1);
         assertGe(newRewards, initialRewards, "Rewards should not decrease after additional deposit");
         
         // Generate more rewards
@@ -1527,11 +1532,11 @@ contract StPlumeMinterForkTest is Test {
         // minter.claim(1);
         
         // Fast forward to end of next rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.syncRewards();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.syncRewards();
         
         // Check rewards after second cycle
-        uint256 finalRewards = minter.getUserRewards(user1);
+        uint256 finalRewards = minterRewards.getUserRewards(user1);
         assert(finalRewards >= newRewards);
         
         // Unstake rewards
@@ -1543,8 +1548,8 @@ contract StPlumeMinterForkTest is Test {
         
         // Verify rewards are reset after unstaking
         // minter.normalizedAmount(user1, 15000000000000000000);
-        // assert (minter.getYield() == minter.userRewards(user1).rewardsBefore);
-        uint256 rewardsAfterUnstake = minter.getUserRewards(user1);
+        // assert (minter.getYield() == minterRewards.userRewards(user1).rewardsBefore);
+        uint256 rewardsAfterUnstake = minterRewards.getUserRewards(user1);
         assertEq(rewardsAfterUnstake, 0, "Rewards should be reset after unstaking");
     }
 
@@ -1563,11 +1568,11 @@ contract StPlumeMinterForkTest is Test {
         // minter.claim(1);
         
         // Fast forward to end of rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.syncRewards();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.syncRewards();
         
         // Check user1 rewards
-        uint256 user1InitialRewards = minter.getUserRewards(user1);
+        uint256 user1InitialRewards = minterRewards.getUserRewards(user1);
         // uint256 oldYield = minter.getYield();
         assert(user1InitialRewards >= 0);
         
@@ -1576,7 +1581,7 @@ contract StPlumeMinterForkTest is Test {
         minter.submit{value: 10 ether}();
         
         // Check user2 rewards (should be 0 since they joined after rewards accrued)
-        uint256 user2InitialRewards = minter.getUserRewards(user2);
+        uint256 user2InitialRewards = minterRewards.getUserRewards(user2);
         assertEq(user2InitialRewards, 0, "User2 should have no rewards initially");
         
         // Generate more rewards
@@ -1586,12 +1591,12 @@ contract StPlumeMinterForkTest is Test {
         // minter.claim(1);
         
         // Fast forward to end of next rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.syncRewards();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.syncRewards();
         
         // Check rewards after second cycle
-        uint256 user1FinalRewards = minter.getUserRewards(user1);
-        uint256 user2FinalRewards = minter.getUserRewards(user2);
+        uint256 user1FinalRewards = minterRewards.getUserRewards(user1);
+        uint256 user2FinalRewards = minterRewards.getUserRewards(user2);
         // minter.lastCycleTotalSupply();
         // uint256 newYield = minter.getYield();
         // assert(newYield >= oldYield);
@@ -1619,11 +1624,11 @@ contract StPlumeMinterForkTest is Test {
         minter.claim(1);
         
         // Fast forward to end of rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.syncRewards();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.syncRewards();
         
         // Check initial rewards
-        uint256 initialRewards = minter.getUserRewards(user1);
+        uint256 initialRewards = minterRewards.getUserRewards(user1);
         assert(initialRewards >= 0);
         
         // Unstake half of the frxETH
@@ -1647,22 +1652,22 @@ contract StPlumeMinterForkTest is Test {
         
         
         // Fast forward to end of next rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.syncRewards();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.syncRewards();
         
         // Unstake rewards
         vm.startPrank(user1);
         // Check rewards after second cycle
-        vm.warp(block.timestamp + minter.rewardsCycleLength()*3 + 1);
-        minter.userRewards(user1);
-        minter.rewardsEth();
-        uint256 finalRewards = minter.getUserRewards(user1);
+        vm.warp(block.timestamp + minterRewards.rewardsCycleLength()*3 + 1);
+        minterRewards.userRewards(user1);
+        minterRewards.rewardsEth();
+        uint256 finalRewards = minterRewards.getUserRewards(user1);
         
         // User should still have their initial rewards plus new rewards based on reduced balance
         assert(finalRewards >= initialRewards);
         uint256 unstaked = minter.unstakeRewards();
-        minter.rewardsEth();
-        minter.getUserRewards(user1);
+        minterRewards.rewardsEth();
+        minterRewards.getUserRewards(user1);
         
         // Verify unstaked amount matches final rewards (within small margin)
         assert(unstaked >= finalRewards);
@@ -1681,11 +1686,11 @@ contract StPlumeMinterForkTest is Test {
         // minter.claim(1);
         
         // Fast forward to end of rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.syncRewards();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.syncRewards();
         
         // Check initial rewards
-        uint256 initialRewards = minter.getUserRewards(user1);
+        uint256 initialRewards = minterRewards.getUserRewards(user1);
         
         // Unstake all frxETH and rewards
         vm.startPrank(user1);
@@ -1699,11 +1704,11 @@ contract StPlumeMinterForkTest is Test {
         // minter.claim(1);
         
         // Fast forward to end of next rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.syncRewards();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.syncRewards();
         
         // User should have no rewards since they have no frxETH
-        uint256 finalRewards = minter.getUserRewards(user1);
+        uint256 finalRewards = minterRewards.getUserRewards(user1);
         assertEq(finalRewards, 0, "User with zero balance should have zero rewards");
         
         // Submit ETH again
@@ -1711,7 +1716,7 @@ contract StPlumeMinterForkTest is Test {
         minter.submit{value: 5 ether}();
         
         // User should still have zero rewards from previous cycles
-        uint256 rewardsAfterResubmit = minter.getUserRewards(user1);
+        uint256 rewardsAfterResubmit = minterRewards.getUserRewards(user1);
         assertEq(rewardsAfterResubmit, 0, "User should have zero rewards immediately after re-submitting");
         
         // Generate more rewards
@@ -1721,11 +1726,11 @@ contract StPlumeMinterForkTest is Test {
         // minter.claim(1);
         
         // Fast forward to end of next rewards cycle
-        vm.warp(minter.rewardsCycleEnd() + 1);
-        minter.syncRewards();
+        vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        minterRewards.syncRewards();
         
         // Now user should have rewards from the new cycle
-        uint256 newCycleRewards = minter.getUserRewards(user1);
+        uint256 newCycleRewards = minterRewards.getUserRewards(user1);
         assert(newCycleRewards >= 0);
     }
 
@@ -3008,29 +3013,29 @@ contract StPlumeMinterForkTest is Test {
         minter.submit{value: 100 ether}();
 
         vm.prank(owner);
-        uint256 loadedAmount = minter.loadRewards{value: 20 ether}();
-        minter.lastRewardAmount();
+        uint256 loadedAmount = minterRewards.loadRewards{value: 20 ether}();
+        minterRewards.lastRewardAmount();
 
-        vm.warp(minter.rewardsCycleEnd());
-        minter.syncRewards();
-        minter.lastRewardAmount();
+        vm.warp(minterRewards.rewardsCycleEnd());
+        minterRewards.syncRewards();
+        minterRewards.lastRewardAmount();
 
         vm.warp(block.timestamp + 4 days);
-        minter.userRewards(user1);
-        minter.getUserRewards(user1);
-        minter.userRewards(user2);
-        minter.getUserRewards(user2);
+        minterRewards.userRewards(user1);
+        minterRewards.getUserRewards(user1);
+        minterRewards.userRewards(user2);
+        minterRewards.getUserRewards(user2);
 
         vm.startPrank(user1);
         frxETHToken.transfer(user2, 20 ether);
 
         vm.warp(block.timestamp + 3 days);
         // minter.getYield();
-        minter.userRewards(user1);
-        minter.getUserRewards(user1);
-        minter.lastRewardAmount();
-        minter.userRewards(user2);
-        minter.getUserRewards(user2);
+        minterRewards.userRewards(user1);
+        minterRewards.getUserRewards(user1);
+        minterRewards.lastRewardAmount();
+        minterRewards.userRewards(user2);
+        minterRewards.getUserRewards(user2);
         // check rewards of user2
         // check rewards of user1
 
@@ -3078,6 +3083,88 @@ contract StPlumeMinterForkTest is Test {
         assertGt(amountWithdrawn2, 20 ether - fee2-1);
         assertGt(balanceAfter2 - balanceBefore2, 20 ether - fee2-1); //consider fee
         assertEq(currentWithheldETHBefore2 - currentWithheldETH2, 20 ether);
+        
+    }
+
+     function test_integration_flow6_9() public {
+        // First submit ETH
+        vm.prank(user1);
+        minter.submit{value: 100 ether}();
+
+        vm.prank(owner);
+        uint256 loadedAmount = minterRewards.loadRewards{value: 20 ether}();
+        minterRewards.lastRewardAmount();
+
+        vm.warp(minterRewards.rewardsCycleEnd());
+        minterRewards.syncRewards();
+        minterRewards.lastRewardAmount();
+
+        vm.warp(block.timestamp + 4 days);
+        minterRewards.userRewards(user1);
+        minterRewards.getUserRewards(user1);
+        minterRewards.userRewards(user2);
+        minterRewards.getUserRewards(user2);
+
+        vm.startPrank(user1);
+        frxETHToken.transfer(user2, 20 ether);
+
+        vm.warp(block.timestamp + 3 days);
+        // minter.getYield();
+        minterRewards.userRewards(user1);
+        minterRewards.getUserRewards(user1);
+        minterRewards.lastRewardAmount();
+        minterRewards.userRewards(user2);
+        minterRewards.getUserRewards(user2);
+        // check rewards of user2
+        // check rewards of user1
+
+        _updateBatchUnstake();
+
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 100 ether);
+        minter.unstake(5 ether);
+
+        vm.startPrank(user2);
+        frxETHToken.approve(address(minter), 20 ether);
+        minter.unstake(3 ether);
+
+        _updateBatchUnstake();
+
+        vm.startPrank(user1);
+        minter.submit{value: 1000 ether}(); // increase currentWithHeldEth from 2 to 22 and 22 > 7
+
+        vm.startPrank(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        vm.warp(requestTimestamp);
+        uint currentWithheldETHBefore = minter.currentWithheldETH();
+        uint256 balanceBefore = user1.balance;
+        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 balanceAfter = user1.balance;
+        vm.stopPrank();
+        uint fee = minter.REDEMPTION_FEE() * 5 ether / 1e6;
+        uint currentWithheldETH = minter.currentWithheldETH();
+        
+        // Check withdrawal result
+        assertGt(amountWithdrawn, 5 ether - fee-1);
+        assertGt(balanceAfter - balanceBefore, 5 ether - fee-1); //consider fee
+        assertEq(currentWithheldETH - currentWithheldETHBefore, 3 ether);
+
+
+        vm.startPrank(user2);
+        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2);
+        vm.warp(requestTimestamp2);
+        uint currentWithheldETHBefore2 = minter.currentWithheldETH();
+        uint256 balanceBefore2 = user2.balance;
+        uint256 amountWithdrawn2 = minter.withdraw(user2);
+        uint256 balanceAfter2 = user2.balance;
+        vm.stopPrank();
+        uint fee2 = minter.INSTANT_REDEMPTION_FEE() * 3 ether / 1e6;
+        uint currentWithheldETH2 = minter.currentWithheldETH();
+        
+        // Check withdrawal result
+        assertGt(amountWithdrawn2, 3 ether - fee2-1);
+        assertGt(balanceAfter2 - balanceBefore2, 3 ether - fee2-1); //consider fee
+        assertEq(currentWithheldETHBefore2 - currentWithheldETH2, 3 ether);
         
     }
 }

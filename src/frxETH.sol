@@ -29,11 +29,11 @@ pragma solidity ^0.8.0;
     Withdraws are not live (as of deploy time) so loosely pegged to eth but is possible will float */
 /// @dev frxETH adheres to EIP-712/EIP-2612 and can use permits
 import { ERC20PermitPermissionedMint } from "./ERC20/ERC20PermitPermissionedMint.sol";
-import {IstPlumeMinter} from "./interfaces/IStPlumeMinter.sol";
+import {IstPlumeRewards} from "./interfaces/IstPlumeRewards.sol";
 
 contract frxETH is ERC20PermitPermissionedMint {
 
-    address public stPlumeMinter;
+    address public stPlumeRewards;
     /* ========== CONSTRUCTOR ========== */
     constructor(
       address _creator_address,
@@ -47,13 +47,13 @@ contract frxETH is ERC20PermitPermissionedMint {
         address to,
         uint256 amount
   ) internal override {
-    if(stPlumeMinter != address(0)){
-      if(!(from == address(0) || from == address(this))) IstPlumeMinter(stPlumeMinter).handleTokenTransfer(from);
-      if(!(to == address(0) || to == address(this))) IstPlumeMinter(stPlumeMinter).handleTokenTransfer(to);
+    if(stPlumeRewards != address(0)){
+      if(!(from == address(0) || from == address(this))) IstPlumeRewards(stPlumeRewards).handleTokenTransfer(from);
+      if(!(to == address(0) || to == address(this))) IstPlumeRewards(stPlumeRewards).handleTokenTransfer(to);
     }
   }
 
-  function updateStPlumeMinter(address _stPlumeMinter) external onlyOwner {
-    stPlumeMinter = _stPlumeMinter;
+  function updateStPlumeRewards(address _stPlumeRewards) external onlyOwner {
+    stPlumeRewards = _stPlumeRewards;
   }
 }
