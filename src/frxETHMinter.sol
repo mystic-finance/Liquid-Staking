@@ -58,27 +58,9 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuard {
     ) OperatorRegistry(_owner, _timelock_address) {
         depositContract = IDepositContract(depositContractAddress);
         frxETHToken = frxETH(frxETHAddress);
-        sfrxETHToken = IsfrxETH(sfrxETHAddress);
         withholdRatio = 20000; // No ETH is withheld initially (2%)
         currentWithheldETH = 0;
     }
-
-    /// @notice Mint frxETH and deposit it to receive sfrxETH in one transaction
-    /** @dev Could try using EIP-712 / EIP-2612 here in the future if you replace this contract,
-        but you might run into msg.sender vs tx.origin issues with the ERC4626 */
-    // function submitAndDeposit(address recipient) external payable returns (uint256 shares) {
-    //     // Give the frxETH to this contract after it is generated
-    //     _submit(address(this)); 
-
-    //     // Approve frxETH to sfrxETH for staking
-    //     frxETHToken.approve(address(sfrxETHToken), msg.value);
-
-    //     // Deposit the frxETH and give the generated sfrxETH to the final recipient
-    //     uint256 sfrxeth_recieved = sfrxETHToken.deposit(msg.value, recipient);
-    //     require(sfrxeth_recieved > 0, 'No sfrxETH was returned');
-
-    //     return sfrxeth_recieved;
-    // }
 
     /// @notice Mint frxETH to the recipient using sender's funds. Internal portion
     function _submit(address recipient) internal virtual returns (uint256 amount) {

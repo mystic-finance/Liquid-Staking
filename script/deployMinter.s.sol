@@ -9,7 +9,7 @@ import {stPlumeMinter} from "../src/stPlumeMinter.sol";
 import {OperatorRegistry} from "../src/OperatorRegistry.sol";
 
 contract Deploy is Script {
-    address constant TIMELOCK_ADDRESS = 0x8412ebf45bAC1B340BbE8F318b928C466c4E39CA;
+    address constant TIMELOCK_ADDRESS = 0x474302838E35DfC33967bA99AbbcB7560D48C634;
     uint32 constant REWARDS_CYCLE_LENGTH = 7 days;
     address constant PLUME_STAKING = 0x30c791E4654EdAc575FA1700eD8633CB2FEDE871;
 
@@ -21,12 +21,12 @@ contract Deploy is Script {
         // sfrxETH sfe = new sfrxETH(ERC20(address(fe)), REWARDS_CYCLE_LENGTH);
         stPlumeMinter fem = new stPlumeMinter(address(fe), address(0), msg.sender, TIMELOCK_ADDRESS, PLUME_STAKING);
         
-        OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](5);
+        OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](2);
         validators[0] = OperatorRegistry.Validator(1);
         validators[1] = OperatorRegistry.Validator(2);
-        validators[2] = OperatorRegistry.Validator(3);
-        validators[3] = OperatorRegistry.Validator(4);
-        validators[4] = OperatorRegistry.Validator(5);
+        // validators[2] = OperatorRegistry.Validator(3);
+        // validators[3] = OperatorRegistry.Validator(4);
+        // validators[4] = OperatorRegistry.Validator(5);
         // Post deploy
         console.log('Deployer:', msg.sender);
         fe.addMinter(address(fem));
@@ -49,3 +49,11 @@ contract Deploy is Script {
 //   Minter deployed at 0x72E6Dcc8E45e6a770e45A4C23F8cBb6536064F67
 //   Minter added to frxETH at 0x11A4aC7b41F0981cB9Cc75833ed45CdF907b48A1
 //   Minter added to sfrxETH at 0x0D1e28744849a254D1730Ae898aBFB73eC393e64
+
+
+// Mainnet test
+// == Logs ==
+//   Deployer: 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c
+//   Deployer: 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c
+//   Minter deployed at 0x8F74472cfCc3c2fDadc7CBbF761bde38349Fa4D6
+//   Minter added to frxETH at 0xc8F76806482007C73Ee4d88D9B9B78C622c03e6C

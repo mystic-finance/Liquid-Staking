@@ -6,20 +6,20 @@ pragma solidity ^0.8.0;
 // ====================================================================
 // Extension of frxETHMinter that adds staking functionality
 
-import "./frxETHMinter.sol";
+import {frxETHMinter} from "./frxETHMinter.sol";
 import { IPlumeStaking } from "./interfaces/IPlumeStaking.sol";
 import { PlumeStakingStorage } from "./interfaces/PlumeStakingStorage.sol";
-import "openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
-import "openzeppelin-contracts/contracts/access/AccessControl.sol";
-import {IstPlumeMinter} from "./interfaces/IStPlumeMinter.sol";
+import {ReentrancyGuard} from "openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
+import {AccessControl} from "openzeppelin-contracts/contracts/access/AccessControl.sol";
+// import {IstPlumeMinter} from "./interfaces/IStPlumeMinter.sol";
 
 /// @title stPlumeMinter - Enhanced frxETHMinter with staking capabilities
 /// @notice Extends frxETHMinter to add unstaking, restaking, and reward management
-contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
+contract stPlumeMinter is frxETHMinter, AccessControl {
     // Role definitions
-    bytes32 public constant REBALANCER_ROLE = keccak256("REBALANCER_ROLE");
-    bytes32 public constant CLAIMER_ROLE = keccak256("CLAIMER_ROLE");
-    bytes32 public constant HANDLER_ROLE = keccak256("HANDLER_ROLE");
+    bytes32 constant REBALANCER_ROLE = keccak256("REBALANCER_ROLE");
+    bytes32 constant CLAIMER_ROLE = keccak256("CLAIMER_ROLE");
+    bytes32 constant HANDLER_ROLE = keccak256("HANDLER_ROLE");
     uint256 public YIELD_FEE = 100000; // 10%
     uint256 public REDEMPTION_FEE = 150; // 0.015%
     uint256 public INSTANT_REDEMPTION_FEE = 5000; // 0.5%
@@ -30,17 +30,17 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
     uint32 public lastSync;
     uint32 public rewardsCycleEnd;
     uint256 public lastRewardAmount; // reward in this unfinished cycle
-    uint256 public minStake = 1e16;
-    uint256 public withdrawalQueueThreshold = 100 ether;
-    uint256 public batchUnstakeInterval = 3 days;
+    uint256 public minStake = 1e17;
+    uint256 public withdrawalQueueThreshold = 1000 ether;
+    uint256 public batchUnstakeInterval = 21 days + 1 hours;
     uint256 public totalInstantUnstaked;
     uint256 public totalUnstaked;
 
-    
     struct WithdrawalRequest {
         uint256 amount;
         uint256 deficit;
         uint256 timestamp;
+        uint256 createdTimestamp;
     }
     struct CycleRewards {
         uint256 rewards;
@@ -55,8 +55,8 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         uint256 lastCycleClaimed;
     }
 
-    CycleRewards[] public cycleRewards;
-    address public nativeToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    CycleRewards[] cycleRewards;
+    address nativeToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     mapping(address => WithdrawalRequest) public withdrawalRequests;
     mapping(address => UserRewards) public userRewards;
     mapping (uint16 => uint256) public maxValidatorPercentage;
@@ -70,7 +70,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
     event RewardClaimed(address indexed user, address indexed token, uint256 amount);
     event AllRewardsClaimed(address indexed user, uint256[] totalAmount);
     event ValidatorRewardClaimed(address indexed user, address indexed token, uint16 indexed validatorId, uint256 amount);
-
+    
     constructor(
         address frxETHAddress, 
         address sfrxETHAddress, 
@@ -86,6 +86,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         _setupRole(CLAIMER_ROLE, _owner);
         _setupRole(HANDLER_ROLE, frxETHAddress);
     }
+    
 
     function addValidator(Validator calldata validator) public override onlyByOwnGov {
         require(!_checkValidator(uint256(validator.validatorId)), "Validator already exists");
@@ -100,7 +101,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
     }
     
     /// @notice Get the next validator to deposit to
-    function getNextValidator(uint256 depositAmount, uint16 validatorId) public view returns (uint256 validatorId_, uint256 capacity_) {
+    function getNextValidator(uint256 depositAmount, uint16 validatorId) internal view returns (uint256 validatorId_, uint256 capacity_) {
         require(validatorId != 0, "Validator does not exist");
         (bool active, , uint256 stakedAmount, ) = plumeStaking.getValidatorStats(uint16(validatorId));
         uint256 totalStaked = plumeStaking.totalAmountStaked();
@@ -125,15 +126,18 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
 
     /// @notice Unstake the specified amount from a validator
     function unstake(uint256 amount) external nonReentrant returns (uint256 amountUnstaked) {
-        _rebalance();
-        require(amount >= minStake, "not enough to unstake");
-        amountUnstaked =  _unstake(amount, false, 0);
+        amountUnstaked =  _unstakeFromValidator(amount, 0);
         return amountUnstaked;
     }
 
     function unstakeFromValidator(uint256 amount, uint16 validatorId) external nonReentrant returns (uint256 amountUnstaked) {
-        _rebalance();
         require(_checkValidator(uint256(validatorId)), "Validator does not exist");
+        amountUnstaked =  _unstakeFromValidator(amount, validatorId);
+        return amountUnstaked;
+    }
+
+    function _unstakeFromValidator(uint256 amount, uint16 validatorId) internal returns (uint256 amountUnstaked) {
+        _rebalance();
         require(amount >= minStake, "not enough to unstake");
         amountUnstaked =  _unstake(amount, false, validatorId);
         return amountUnstaked;
@@ -170,15 +174,14 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
 
     /// @notice Restake from withheld funds
     function stakeWitheld(uint256 amount) external nonReentrant onlyRole(REBALANCER_ROLE) returns (uint256 amountRestaked) {
-        _rebalance();
-        currentWithheldETH -= amount;
-        _depositEther(amount, 0);
-        
-        emit ETHSubmitted(address(this), address(this), amount, 0);
-        return amount;
+        return _stakeWitheldForValidator(amount, 0);
     }
 
-    function stakeWitheldForValidator(uint256 amount, uint16 validatorId) external nonReentrant onlyRole(REBALANCER_ROLE) returns (uint256 amountRestaked) {
+    function stakeWitheldForValidator(uint256 amount, uint16 validatorId) public nonReentrant onlyRole(REBALANCER_ROLE) returns (uint256 amountRestaked) {
+        return _stakeWitheldForValidator(amount, validatorId);
+    }
+
+    function _stakeWitheldForValidator(uint256 amount, uint16 validatorId) internal returns (uint256 amountRestaked) {
         _rebalance();
         currentWithheldETH -= amount;
         _depositEther(amount, validatorId);
@@ -197,74 +200,84 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         return amount;
     }
 
-    /// @notice Withdraw available funds that have completed cooling
     function withdraw(address recipient) external nonReentrant returns (uint256 amount) {
         _rebalance();
         WithdrawalRequest storage request = withdrawalRequests[msg.sender];
-        uint256 totalWithdrawable = plumeStaking.amountWithdrawable() + currentWithheldETH;
         require(block.timestamp >= request.timestamp, "Cooldown not complete");
+
+        if(request.timestamp == request.createdTimestamp){
+            return _instantWithdraw(recipient);
+        }else{
+            return _withdraw(recipient);
+        }
+    }
+
+    function _instantWithdraw(address recipient) internal returns (uint256 amount) {
+        WithdrawalRequest storage request = withdrawalRequests[msg.sender];
+        uint256 totalWithdrawable = currentWithheldETH;
         require(totalWithdrawable > 0, "Withdrawal not available yet");
 
-        amount = request.amount;
-        uint256 totalAmount = amount + request.deficit;
+        uint256 totalAmount = request.amount + request.deficit;
         require(totalAmount > 0, "Invalid Amount");
         require(totalAmount <= totalWithdrawable, "Full withdrawal not available yet");
-        uint256 withdrawn;
-        uint fee;
-        request.amount = 0;
-        request.timestamp = 0;
-        request.deficit = 0;
+        require(totalAmount <= totalInstantUnstaked, "Full withdrawal not available yet");
 
-        if(amount > currentWithheldETH){
-            uint256 balanceBefore = address(this).balance;
-            plumeStaking.withdraw();
-            uint256 balanceAfter = address(this).balance;
-            withdrawn = balanceAfter - balanceBefore;
-            fee = totalAmount * REDEMPTION_FEE / RATIO_PRECISION;
-        } else {
-            fee = totalAmount * INSTANT_REDEMPTION_FEE / RATIO_PRECISION;
-            withdrawn = amount;
-            currentWithheldETH -= amount;
-            totalInstantUnstaked -= amount;
-        }
+        uint fee = totalAmount * INSTANT_REDEMPTION_FEE / RATIO_PRECISION;
+        request.amount = 0; request.timestamp = 0; request.deficit = 0;
+        totalInstantUnstaked -= totalAmount;
+        currentWithheldETH -= totalAmount;
+        totalUnstaked -= totalAmount;
 
-        currentWithheldETH -= totalAmount - amount; // remove deficit from currentWithHeldEth as buffer
-        totalInstantUnstaked -= totalAmount - amount;
-        uint256 cachedWithheldETH = currentWithheldETH;
-        currentWithheldETH += withdrawn;
-        currentWithheldETH -= amount; //net must be > 0
         uint amountToWithdraw = totalAmount - fee;
         withHoldEth += fee;
-        if(withdrawn < amount){
-            require(amount-withdrawn < fee, "Insufficient funds to cover deficit");
-            currentWithheldETH += amount - withdrawn; // net must be > 0
-            withHoldEth -= amount - withdrawn; // reduce fee since some covered by withdrawal fee
-        }else if(withdrawn > amount){
-            totalInstantUnstaked += withdrawn - amount;
-        }
 
-        totalUnstaked -= totalAmount;
-        require(currentWithheldETH >= cachedWithheldETH, "Insufficient funds to cover deficit as new currentWithheldETH must be net positive");
-        // withdrawal fee can also cover fee paid on withdrawal (set by the team
         (bool success,) = address(recipient).call{value: amountToWithdraw}(""); //send amount to user
         require(success, "Withdrawal failed");
         emit Withdrawn(msg.sender, amountToWithdraw);
         return amountToWithdraw;
     }
 
-    /// @notice Get stake information for a specific user
-    function stakeInfo() public view returns (PlumeStakingStorage.StakeInfo memory) {
-        return plumeStaking.stakeInfo(address(this));
-    }
+    /// @notice Withdraw available funds that have completed cooling
+    function _withdraw(address recipient) internal returns (uint256 amount) {
+        WithdrawalRequest storage request = withdrawalRequests[msg.sender];
+        uint256 totalWithdrawable = plumeStaking.amountWithdrawable();
+        require(totalWithdrawable + totalInstantUnstaked > 0, "Withdrawal not available yet");
 
-    /// @notice Get the total amount claimable across all users for a specific token
-    function totalAmountClaimable() external view returns (uint256 amount) {
-        return plumeStaking.totalAmountClaimable(nativeToken);
-    }
+        amount = request.amount;
+        uint withdrawn = 0;
+        uint256 totalAmount = amount + request.deficit;
+        require(totalAmount > 0, "Invalid Amount");
+        require(totalAmount <= totalWithdrawable + totalInstantUnstaked, "Full withdrawal not available yet");
+        uint fee = totalAmount * REDEMPTION_FEE / RATIO_PRECISION;
+        request.amount = 0; request.timestamp = 0; request.deficit = 0;
 
-    /// @notice Get the reward rate for a specific token
-    function getRewardRate() external view returns (uint256 rate) {
-        return plumeStaking.getRewardRate(nativeToken);
+        if(totalWithdrawable > 0){
+            uint256 balanceBefore = address(this).balance;
+            plumeStaking.withdraw();
+            uint256 balanceAfter = address(this).balance;
+            withdrawn = balanceAfter - balanceBefore;
+        }
+        withHoldEth += fee;
+
+        if(withdrawn > 0 && withdrawn >= amount){
+            currentWithheldETH += withdrawn;
+            totalInstantUnstaked += withdrawn;
+        }else if(withdrawn > 0 && withdrawn < amount){
+            require(amount-withdrawn < fee, "Insufficient funds to cover deficit");
+            currentWithheldETH += amount - withdrawn; // net must be > 0
+            withHoldEth -= amount - withdrawn; // reduce fee since some covered by withdrawal fee
+        }
+        require(totalInstantUnstaked <= currentWithheldETH, "Not enough to fulfill withdrawal at the moment");
+
+        currentWithheldETH -= totalAmount;
+        totalInstantUnstaked -= totalAmount;
+        uint amountToWithdraw = totalAmount - fee;
+        totalUnstaked -= totalAmount;
+
+        (bool success,) = address(recipient).call{value: amountToWithdraw}(""); //send amount to user
+        require(success, "Withdrawal failed");
+        emit Withdrawn(msg.sender, amountToWithdraw);
+        return amountToWithdraw;
     }
 
     /// @notice Get the claimable reward amount for a user and token
@@ -305,16 +318,17 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
 
     function handleTokenTransfer(address user) external onlyRole(HANDLER_ROLE) {
         uint256 balance = frxETHToken.balanceOf(user);
-        (,uint256 currentRewards) = _getSplitYield();
+        (uint256 accruedRewards, uint256 currentRewards) = _getSplitYield();
         userRewards[user].rewardsAccrued += _getCurrentUserYield(user, balance); //accrue reward to avoid reward loss
-        userRewards[user].rewardsBefore = getYield();
+        userRewards[user].rewardsBefore = accruedRewards + currentRewards;
         userRewards[user].rewardInCycle = currentRewards;
         userRewards[user].lastCycleClaimed = cycleRewards.length;
     }
 
     function getUserRewards(address user) public view returns (uint256 yield) {
         uint256 balance = frxETHToken.balanceOf(user);
-        yield = normalizedAmount(user, balance) - balance;
+        uint256 normalizedAmount = balance + userRewards[user].rewardsAccrued + _getCurrentUserYield(user, balance);
+        yield = normalizedAmount - balance;
     }
 
     /// @notice Unstake rewards
@@ -324,9 +338,9 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         if(yield == 0){return 0;}
         _unstake(yield, true, 0);
 
-        (,uint256 currentRewards) = _getSplitYield();
+        (uint256 accruedRewards, uint256 currentRewards) = _getSplitYield();
         userRewards[msg.sender].rewardsAccrued = 0;
-        userRewards[msg.sender].rewardsBefore = getYield();
+        userRewards[msg.sender].rewardsBefore = accruedRewards + currentRewards;
         userRewards[msg.sender].rewardInCycle = currentRewards;
         userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
         require(getUserRewards(msg.sender) == 0, "Rewards should be reset after unstaking");
@@ -346,14 +360,14 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         }
     }
 
-    function getYield() public view returns (uint256) {
-        if (block.timestamp >= rewardsCycleEnd) {
-            return rewardsEth;
-        }
-        uint256 maxTime = rewardsCycleEnd > block.timestamp ? block.timestamp : rewardsCycleEnd;
-        uint256 unlockedRewards = (lastRewardAmount * (maxTime - lastSync)) / (rewardsCycleEnd - lastSync);
-        return rewardsEth - lastRewardAmount + unlockedRewards;
-    }
+    // function getYield() public view returns (uint256) {
+    //     if (block.timestamp >= rewardsCycleEnd) {
+    //         return rewardsEth;
+    //     }
+    //     uint256 maxTime = rewardsCycleEnd > block.timestamp ? block.timestamp : rewardsCycleEnd;
+    //     uint256 unlockedRewards = (lastRewardAmount * (maxTime - lastSync)) / (rewardsCycleEnd - lastSync);
+    //     return rewardsEth - lastRewardAmount + unlockedRewards;
+    // }
 
     function _getSplitYield() internal view returns (uint256, uint256) {
         if (block.timestamp >= rewardsCycleEnd) {
@@ -389,13 +403,12 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         return (validatorId, 0);
     }
 
-
     function _getCurrentUserYield(address user, uint256 amount) internal view returns (uint256) {
         uint256 totalYield = 0;
         uint256 userLastCycle = userRewards[user].lastCycleClaimed;
-        (uint256 accruedRewards, uint256 currentRewards) = _getSplitYield();
+        (, uint256 currentRewards) = _getSplitYield();
         uint256 totalSupply = frxETHToken.totalSupply();
-        uint256 totalRewards = accruedRewards + currentRewards;
+        // uint256 totalRewards = accruedRewards + currentRewards;
         uint256 eligibleRewards = currentRewards > userRewards[user].rewardInCycle ? currentRewards - userRewards[user].rewardInCycle : 0;
 
         if (totalSupply == 0) return 0;
@@ -407,26 +420,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         return totalYield + (eligibleRewards * amount / totalSupply);
     }
 
-    function normalizedAmount(address user, uint256 amount) public view returns (uint256) {
-        return amount + userRewards[user].rewardsAccrued + _getCurrentUserYield(user, amount);
-    }
-
-    /// @notice Get validator statistics
-    function getValidatorStats(uint16 validatorId) external view returns (bool active, uint256 commission, uint256 totalStaked, uint256 stakersCount) {
-        return plumeStaking.getValidatorStats(validatorId);
-    }
-
-    function getValidatorStake(uint16 validatorId) external view returns (uint256) {
-        return plumeStaking.getUserValidatorStake(address(this), validatorId);
-    }
-
-    /// @notice Get the list of validators a user has staked with
-    function getUserValidators(address user) external view returns (uint16[] memory validatorIds) {
-        return plumeStaking.getUserValidators(user);
-    }
-
     //// internal functions
-
     /// @notice Deposit ETH to validators, splitting across multiple if needed
     function _depositEther(uint256 _amount, uint16 _validatorId) internal returns (uint256 depositedAmount) {
         // Initial pause check
@@ -570,7 +564,8 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         withdrawalRequests[msg.sender] = WithdrawalRequest({
             amount: amountUnstaked,
             deficit: deficit,
-            timestamp: cooldownTimestamp
+            timestamp: cooldownTimestamp,
+            createdTimestamp: block.timestamp
         });
         
         emit Unstaked(msg.sender, amountUnstaked);
@@ -602,15 +597,14 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
 
     /// @notice Submit ETH to the contract
     function _submit(address recipient) internal override returns (uint256 amount) {
-        amount = super._submit(recipient);
-        require(amount >= minStake, "not enough to stake");
-        _depositEther(amount, 0);
+        return _submit(recipient, 0);
     }
 
     function _submit(address recipient, uint16 validatorId) internal returns (uint256 amount) {
         amount = super._submit(recipient);
         require(amount >= minStake, "not enough to stake");
         _depositEther(amount, validatorId);
+        return amount;
     }
 
     /// @notice Claim rewards for a specific token across all validators
@@ -657,27 +651,21 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         rewardsCycleEnd = uint32(end);
     }
 
-    function setYieldFee(uint256 newFee) external onlyByOwnGov {
-        require(newFee <= 500000, "Yield fee capped at 50%");
-        YIELD_FEE = newFee;
-    }
-
-    function setRedemptionFees(
+    function setFees(
         uint256 newInstantFee, 
-        uint256 newStandardFee
+        uint256 newStandardFee,
+        uint256 newYieldFee
     ) external onlyByOwnGov {
-        require(newInstantFee <= 1000000 && newStandardFee <= 1000000, "Fees too high");
+        require(newInstantFee <= 1000000 && newStandardFee <= 1000000 && newYieldFee <= 500000, "Fees too high");
         INSTANT_REDEMPTION_FEE = newInstantFee;
         REDEMPTION_FEE = newStandardFee;
+        YIELD_FEE = newYieldFee;
     }
 
-    function setRewardsCycleLength(uint32 newLength) external onlyByOwnGov {
+    function setRewardsCycleLength(uint32 newLength, uint256 _minStake) external onlyByOwnGov {
         require(newLength >= 1 days && newLength <= 365 days, "Invalid cycle length");
-        rewardsCycleLength = newLength;
-    }
-
-    function setMinStake(uint256 _minStake) external onlyByOwnGov {
         require(_minStake >0, "minimum stake too low");
+        rewardsCycleLength = newLength;
         minStake = _minStake;
     }
 
@@ -693,9 +681,9 @@ contract stPlumeMinter is frxETHMinter, AccessControl, IstPlumeMinter {
         batchUnstakeInterval = _interval;
     }
 
-    function setNativeToken(address _nativeToken) external onlyByOwnGov {
-        nativeToken = _nativeToken;
-    }
+    // function setNativeToken(address _nativeToken) external onlyByOwnGov {
+    //     nativeToken = _nativeToken;
+    // }
 
     receive() external payable override {
         if(msg.sender != address(plumeStaking.getTreasury()) && msg.sender != address(plumeStaking)) {
