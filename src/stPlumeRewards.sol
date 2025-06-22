@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
+import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
 
 // ====================================================================
 // |                      Plume stPlumeRewards                        |
@@ -10,19 +11,19 @@ import { IPlumeStaking } from "./interfaces/IPlumeStaking.sol";
 import { IstPlumeRewards } from "./interfaces/IstPlumeRewards.sol";
 import { IstPlumeMinter } from "./interfaces/IstPlumeMinter.sol";
 import { frxETH } from "./frxETH.sol";
-import { AccessControl } from "openzeppelin-contracts/contracts/access/AccessControl.sol";
-import { ReentrancyGuard } from "openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
+import { AccessControlUpgradeable } from "openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "openzeppelin-contracts-upgradeable/contracts/security/ReentrancyGuardUpgradeable.sol";
 
 /// @title stPlumeRewards - Reward system for the stPlumeMinter contract
 /// @notice Handles all reward-related functionality for frxETH token holders
-contract stPlumeRewards is AccessControl, ReentrancyGuard, IstPlumeRewards {
+contract stPlumeRewards is Initializable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, IstPlumeRewards {
     // Role definitions
     bytes32 public constant CLAIMER_ROLE = keccak256("CLAIMER_ROLE");
     bytes32 public constant HANDLER_ROLE = keccak256("HANDLER_ROLE");
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     
     // Fees
-    uint256 public YIELD_FEE = 100000; // 10%
+    uint256 public YIELD_FEE; // 10%
     uint256 public constant RATIO_PRECISION = 1e6;
     
     // Reward state
@@ -32,9 +33,9 @@ contract stPlumeRewards is AccessControl, ReentrancyGuard, IstPlumeRewards {
     uint32 public lastSync;
     uint32 public rewardsCycleEnd;
     uint256 public lastRewardAmount; // reward in this unfinished cycle
-    
-    // Native ETH token address constant
-    address public constant nativeToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    uint256 __gap1;
+    uint256 __gap2;
+    uint256 __gap3;
     
     CycleRewards[] public cycleRewards;
     mapping(address => UserRewards) public userRewards;
@@ -48,16 +49,22 @@ contract stPlumeRewards is AccessControl, ReentrancyGuard, IstPlumeRewards {
     event AllRewardsClaimed(address indexed user, uint256[] totalAmount);
     event ValidatorRewardClaimed(address indexed user, address indexed token, uint16 indexed validatorId, uint256 amount);
     
-    constructor(
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         address _frxETHToken,
         address _stPlumeMinter,
         address _admin
-    ) {
+    ) public initializer{
+        __ReentrancyGuard_init();
         frxETHToken = frxETH(_frxETHToken);
         stPlumeMinter = _stPlumeMinter;
         
         rewardsCycleLength = 7 days;
         rewardsCycleEnd = uint32(block.timestamp + rewardsCycleLength);
+        YIELD_FEE = 100000;
         
         _setupRole(DEFAULT_ADMIN_ROLE, _admin);
         _setupRole(MINTER_ROLE, _admin);

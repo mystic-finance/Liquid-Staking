@@ -21,11 +21,11 @@ pragma solidity ^0.8.0;
 // Travis Moore: https://github.com/FortisFortuna
 // Dennis: https://github.com/denett
 
-import "./Utils/Owned.sol";
+import "./Utils/OwnedUpgradeable.sol";
 
 /// @title Keeps track of validators used for ETH 2.0 staking
 /// @notice A permissioned owner can add and removed them at will
-contract OperatorRegistry is Owned {
+contract OperatorRegistry is OwnedUpgradeable {
     struct Validator {
         uint256 validatorId;
     }
@@ -33,7 +33,12 @@ contract OperatorRegistry is Owned {
     Validator[] validators; // Array of unused / undeposited validators that can be used at a future time
     address public timelock_address;
 
-    constructor(address _owner, address _timelock_address) Owned(_owner) {
+    constructor(address _owner, address _timelock_address) OwnedUpgradeable(_owner) {
+        // timelock_address = _timelock_address;
+    }
+
+    function _operator_init(address _owner, address _timelock_address) internal onlyInitializing{
+        _owned_init(_owner);
         timelock_address = _timelock_address;
     }
 

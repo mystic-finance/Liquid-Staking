@@ -24,7 +24,7 @@ pragma solidity ^0.8.0;
 
 import { frxETH } from "./frxETH.sol";
 import { IsfrxETH } from "./interfaces/IsfrxETH.sol";
-import "openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
+import {ReentrancyGuardUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/security/ReentrancyGuardUpgradeable.sol";
 import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { IDepositContract } from "./DepositContract.sol";
 import "./OperatorRegistry.sol";
@@ -34,7 +34,7 @@ import "./OperatorRegistry.sol";
 /** @dev Has permission to mint frxETH. 
     Once +32 ETH has accumulated, adds it to a validator, which then deposits it for ETH 2.0 staking (depositEther())
     Withhold ratio refers to what percentage of ETH this contract keeps whenever a user makes a deposit. 0% is kept initially */
-contract frxETHMinter is OperatorRegistry, ReentrancyGuard {    
+contract frxETHMinter is OperatorRegistry, ReentrancyGuardUpgradeable {    
     uint256 public constant DEPOSIT_SIZE = 32 ether; // ETH 2.0 minimum deposit size
     uint256 public constant RATIO_PRECISION = 1e6; // 1,000,000 
 
@@ -42,9 +42,9 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuard {
     uint256 public currentWithheldETH; // Needed for internal tracking
     mapping(bytes => bool) public activeValidators; // Tracks validators (via their pubkeys) that already have 32 ETH in them
 
-    IDepositContract public immutable depositContract; // ETH 2.0 deposit contract
-    frxETH public immutable frxETHToken;
-    IsfrxETH public immutable sfrxETHToken;
+    IDepositContract public depositContract; // ETH 2.0 deposit contract
+    frxETH public frxETHToken;
+    IsfrxETH public sfrxETHToken;
 
     bool public submitPaused;
     bool public depositEtherPaused;
@@ -56,6 +56,15 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuard {
         address _owner, 
         address _timelock_address
     ) OperatorRegistry(_owner, _timelock_address) {
+        // depositContract = IDepositContract(depositContractAddress);
+        // frxETHToken = frxETH(frxETHAddress);
+        // withholdRatio = 20000; // No ETH is withheld initially (2%)
+        // currentWithheldETH = 0;
+    }
+
+    function _frxethminter_init(address depositContractAddress, address frxETHAddress, address sfrxETHAddress, address _owner, address _timelock_address) internal onlyInitializing {
+        _operator_init(_owner, _timelock_address);
+        __ReentrancyGuard_init();
         depositContract = IDepositContract(depositContractAddress);
         frxETHToken = frxETH(frxETHAddress);
         withholdRatio = 20000; // No ETH is withheld initially (2%)

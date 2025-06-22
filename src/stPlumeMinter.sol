@@ -4,29 +4,29 @@ pragma solidity ^0.8.0;
 // ====================================================================
 // |                        Plume stPlumeMinter                       |
 // ====================================================================
-// Extension of frxETHMinter that adds staking functionality
+// Extension of frxETHMinter that adds staking functionalit
 
 import {frxETHMinter} from "./frxETHMinter.sol";
 import {IstPlumeRewards} from "./interfaces/IstPlumeRewards.sol";
 import { IPlumeStaking } from "./interfaces/IPlumeStaking.sol";
 import { PlumeStakingStorage } from "./interfaces/PlumeStakingStorage.sol";
-import {ReentrancyGuard} from "openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
-import {AccessControl} from "openzeppelin-contracts/contracts/access/AccessControl.sol";
+// import {Initializable} from "openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
+import {AccessControlUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol";
 // import {IstPlumeMinter} from "./interfaces/IStPlumeMinter.sol";
 
 /// @title stPlumeMinter - Enhanced frxETHMinter with staking capabilities
 /// @notice Extends frxETHMinter to add unstaking, restaking, and reward management
-contract stPlumeMinter is frxETHMinter, AccessControl {
+contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
     // Role definitions
     bytes32 constant REBALANCER_ROLE = keccak256("REBALANCER_ROLE");
     bytes32 constant CLAIMER_ROLE = keccak256("CLAIMER_ROLE");
     bytes32 constant HANDLER_ROLE = keccak256("HANDLER_ROLE");
-    uint256 public REDEMPTION_FEE = 150; // 0.015%
-    uint256 public INSTANT_REDEMPTION_FEE = 5000; // 0.5%
-    uint256 public minStake = 1e17;
+    uint256 public REDEMPTION_FEE; // 0.015%
+    uint256 public INSTANT_REDEMPTION_FEE; // 0.5%
+    uint256 public minStake;
     uint256 public withHoldEth;
-    uint256 public withdrawalQueueThreshold = 1000 ether;
-    uint256 public batchUnstakeInterval = 21 days + 1 hours;
+    uint256 public withdrawalQueueThreshold;
+    uint256 public batchUnstakeInterval;
     uint256 public totalInstantUnstaked;
     uint256 public totalUnstaked;
 
@@ -37,13 +37,16 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         uint256 createdTimestamp;
     }
 
-    address public nativeToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    address public nativeToken;
     mapping(address => WithdrawalRequest) public withdrawalRequests;
     mapping (uint16 => uint256) public maxValidatorPercentage;
     mapping (uint16 => uint256) public totalQueuedWithdrawalsPerValidator;
     mapping (uint16 => uint256) public nextBatchUnstakeTimePerValidator;
     IPlumeStaking public plumeStaking;
     IstPlumeRewards stPlumeRewards;
+    uint256 __gap1;
+    uint256 __gap2;
+    uint256 __gap3;
     // Events
     event Unstaked(address indexed user, uint256 amount);
     event Restaked(address indexed user, uint16 indexed validatorId, uint256 amount);
@@ -52,18 +55,31 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
     event AllRewardsClaimed(address indexed user, uint256[] totalAmount);
     event ValidatorRewardClaimed(address indexed user, address indexed token, uint16 indexed validatorId, uint256 amount);
     
-    constructor(
-        address frxETHAddress, 
-        address sfrxETHAddress, 
-        address _owner, 
-        address _timelock_address,
-        address _plumeStaking
-    ) frxETHMinter(address(0), frxETHAddress, sfrxETHAddress, _owner, _timelock_address) {
+    constructor() frxETHMinter(address(0), address(0), address(0), address(0), address(0)) {
+        // plumeStaking = IPlumeStaking(_plumeStaking);
+        // _setupRole(DEFAULT_ADMIN_ROLE, _owner);
+        // _setupRole(REBALANCER_ROLE, _owner);
+        // _setupRole(CLAIMER_ROLE, _owner);
+        // _setupRole(HANDLER_ROLE, frxETHAddress);
+        _disableInitializers();
+    }
+
+    function initialize(address frxETHAddress, address _owner, address _timelock_address, address _plumeStaking) public initializer {
+        __AccessControl_init();
+        _frxethminter_init(address(0), frxETHAddress, address(0), _owner, _timelock_address);
         plumeStaking = IPlumeStaking(_plumeStaking);
         _setupRole(DEFAULT_ADMIN_ROLE, _owner);
         _setupRole(REBALANCER_ROLE, _owner);
         _setupRole(CLAIMER_ROLE, _owner);
         _setupRole(HANDLER_ROLE, frxETHAddress);
+
+        // setting state
+        REDEMPTION_FEE = 150; // 0.015%
+        INSTANT_REDEMPTION_FEE = 5000; // 0.5%
+        minStake = 1e17;
+        withdrawalQueueThreshold = 100000 ether;
+        batchUnstakeInterval = 21 days + 1 hours;
+        nativeToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     }
 
     function addValidator(Validator calldata validator) public override onlyByOwnGov {
@@ -182,6 +198,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         _rebalance();
         WithdrawalRequest storage request = withdrawalRequests[msg.sender];
         require(block.timestamp >= request.timestamp, "Cooldown not complete");
+        require(request.amount > 0, "Non Zero Amount for Withdrawal");
 
         if(request.timestamp == request.createdTimestamp){
             return _instantWithdraw(recipient);
@@ -196,7 +213,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         require(totalWithdrawable > 0, "Withdrawal not available yet");
 
         uint256 totalAmount = request.amount + request.deficit;
-        require(totalAmount > 0, "Invalid Amount");
+        require(totalAmount > 0, "Non Zero Amount for Instant Withdrawal");
         require(totalAmount <= totalWithdrawable, "Full withdrawal not available yet");
         require(totalAmount <= totalInstantUnstaked, "Full withdrawal not available yet");
 
@@ -224,7 +241,7 @@ contract stPlumeMinter is frxETHMinter, AccessControl {
         amount = request.amount;
         uint withdrawn = 0;
         uint256 totalAmount = amount + request.deficit;
-        require(totalAmount > 0, "Invalid Amount");
+        require(totalAmount > 0, "Non Zero Amount for Withdrawal");
         require(totalAmount <= totalWithdrawable + totalInstantUnstaked, "Full withdrawal not available yet");
         uint fee = totalAmount * REDEMPTION_FEE / RATIO_PRECISION;
         request.amount = 0; request.timestamp = 0; request.deficit = 0;

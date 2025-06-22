@@ -11,7 +11,8 @@ import "../../src/OperatorRegistry.sol";
 import { IPlumeStaking } from "../../src/interfaces/IPlumeStaking.sol";
 import { stPlumeRewards } from "../../src/stPlumeRewards.sol";
 import { PlumeStakingStorage } from "../../src/interfaces/PlumeStakingStorage.sol";
-
+import "openzeppelin-contracts/contracts/proxy/transparent/ProxyAdmin.sol";
+import "openzeppelin-contracts/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 contract StPlumeMinterForkTest is Test {
     stPlumeMinter minter;
@@ -25,6 +26,7 @@ contract StPlumeMinterForkTest is Test {
     address timelock = address(0x5678);
     address user1 = address(0x9ABC);
     address user2 = address(0xDEF0);
+    address user3 = address(0x98f4);
     uint256 YIELD_FEE_DEFAULT = 100000; // 10%
     uint256 REDEMPTION_FEE_DEFAULT = 150; // 0.02%
     uint256 INSTANT_REDEMPTION_FEE_DEFAULT = 5000; // 0.5%
@@ -57,27 +59,29 @@ contract StPlumeMinterForkTest is Test {
         vm.deal(address(mockPlumeStaking), 100 ether);
         vm.deal(address(user1), 10000 ether);
         vm.deal(address(user2), 10000 ether);
+        vm.deal(address(user3), 10000 ether);
         vm.deal(address(owner), 1000 ether);
         
         // Deploy contracts
         frxETHToken = new frxETH(owner, timelock);
-        sfrxETHToken = new sfrxETH(ERC20(address(frxETHToken)), 1000); // 1000 second rewards cycle
         
         // Deploy minter
         vm.startPrank(owner);
-        minter = new stPlumeMinter(
-            address(frxETHToken),
-            address(sfrxETHToken),
-            owner,
-            timelock,
-            address(mockPlumeStaking)
-        );
-        minterRewards = new stPlumeRewards(
-            address(frxETHToken),
-            address(minter),
-            owner
-        );
-        minter.setStPlumeRewards(address(minterRewards));
+
+        ProxyAdmin admin = new ProxyAdmin();
+        // Encode initializer
+        stPlumeMinter impl = new stPlumeMinter();
+        bytes memory initData = abi.encodeWithSignature("initialize(address,address, address, address)", address(frxETHToken), owner, timelock, address(mockPlumeStaking));
+        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(address(impl), address(admin), bytes(""));
+        minter = stPlumeMinter(payable(address(proxy)));
+        minter.initialize( address(frxETHToken), owner, timelock, address(mockPlumeStaking));
+
+        stPlumeRewards implRewards = new stPlumeRewards();
+        bytes memory initData2 = abi.encodeWithSignature("initialize(address,address, address)", address(frxETHToken), address(minter), owner);
+        TransparentUpgradeableProxy proxyRewards = new TransparentUpgradeableProxy(address(implRewards), address(admin), bytes(""));
+        minterRewards = stPlumeRewards(payable(address(proxyRewards)));
+        minterRewards.initialize(address(frxETHToken), address(minter), owner);
+        
 
         OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](5);
         validators[0] = OperatorRegistry.Validator(1);
@@ -86,10 +90,12 @@ contract StPlumeMinterForkTest is Test {
         validators[3] = OperatorRegistry.Validator(4);
         validators[4] = OperatorRegistry.Validator(5);
         
-        minter.addValidators(validators);
+        // minter.addValidators(validators);
         frxETHToken.addMinter(address(minter));
         frxETHToken.addMinter(address(owner));
+        minter.setStPlumeRewards(address(minterRewards));
         frxETHToken.updateStPlumeRewards(address(minterRewards));
+        minter.addValidators(validators);
 
         vm.stopPrank();
     }
@@ -3130,7 +3136,7 @@ contract StPlumeMinterForkTest is Test {
 
         _updateBatchUnstake();
 
-        vm.startPrank(user1);
+        vm.startPrank(user3);
         minter.submit{value: 1000 ether}(); // increase currentWithHeldEth from 2 to 22 and 22 > 7
 
         vm.startPrank(user1);
