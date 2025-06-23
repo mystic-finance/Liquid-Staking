@@ -89,10 +89,10 @@ contract stPlumeRewards is Initializable, AccessControlUpgradeable, ReentrancyGu
         if (amount > 0) {
             uint256 yieldAmount = amount * YIELD_FEE / RATIO_PRECISION;
             yieldEth += amount - yieldAmount;
-            IstPlumeMinter(stPlumeMinter).addWithHoldFee{value: yieldAmount}();
             // Return the fee amount to the minter
             if (amount > 0) {
-                (bool success,) = stPlumeMinter.call{value: amount - yieldAmount}("");
+                IstPlumeMinter(stPlumeMinter).addWithHoldFee{value: yieldAmount}(); //send fee to protocol
+                (bool success,) = stPlumeMinter.call{value: amount - yieldAmount}(""); // send rewards to be staked to earn more rewards
                 require(success, "Rewards transfer failed");
             }
         }
