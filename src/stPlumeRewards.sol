@@ -165,11 +165,11 @@ contract stPlumeRewards is Initializable, AccessControlUpgradeable, ReentrancyGu
 
             userRewards[user].lastCycleClaimed = cycleRewards.length;
             userRewards[user].rewardInCycle = currentRewards;
-            userRewards[user].rewardsBefore = accruedRewards + currentRewards;
+            userRewards[user].rewardsBefore = accruedRewards + currentRewards; // max total accrued rewards
         } else {
             userRewards[user].lastCycleClaimed = endCycle;
             userRewards[user].rewardInCycle = lastCycleRewards;
-            userRewards[user].rewardsBefore += accruedCycleRewards;
+            userRewards[user].rewardsBefore += accruedCycleRewards; // partial accrued rewards
         }
     }
     
