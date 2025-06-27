@@ -33,9 +33,7 @@ contract stPlumeRewards is Initializable, AccessControlUpgradeable, ReentrancyGu
     uint32 public lastSync;
     uint32 public rewardsCycleEnd;
     uint256 public lastRewardAmount; // reward in this unfinished cycle
-    uint256 __gap1;
-    uint256 __gap2;
-    uint256 __gap3;
+    uint256[50] private __gap;
     
     CycleRewards[] public cycleRewards;
     mapping(address => UserRewards) public userRewards;

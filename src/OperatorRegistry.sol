@@ -32,6 +32,7 @@ contract OperatorRegistry is OwnedUpgradeable {
 
     Validator[] validators; // Array of unused / undeposited validators that can be used at a future time
     address public timelock_address;
+    uint256[10] private __gap;
 
     constructor(address _owner, address _timelock_address) OwnedUpgradeable(_owner) {
         // timelock_address = _timelock_address;

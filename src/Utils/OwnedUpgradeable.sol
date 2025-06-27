@@ -7,6 +7,7 @@ import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.s
 contract OwnedUpgradeable is Initializable {
     address public owner;
     address public nominatedOwner;
+    uint256[10] private __gap;
 
     constructor(address _owner) {}
 

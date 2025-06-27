@@ -48,6 +48,7 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuardUpgradeable {
 
     bool public submitPaused;
     bool public depositEtherPaused;
+    uint256[10] private __gap;
 
     constructor(
         address depositContractAddress, 

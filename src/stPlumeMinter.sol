@@ -44,9 +44,8 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
     mapping (uint16 => uint256) public nextBatchUnstakeTimePerValidator;
     IPlumeStaking public plumeStaking;
     IstPlumeRewards stPlumeRewards;
-    uint256 __gap1;
-    uint256 __gap2;
-    uint256 __gap3;
+    uint256[50] private __gap;
+    
     // Events
     event Unstaked(address indexed user, uint256 amount);
     event Restaked(address indexed user, uint16 indexed validatorId, uint256 amount);
@@ -56,11 +55,6 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
     event ValidatorRewardClaimed(address indexed user, address indexed token, uint16 indexed validatorId, uint256 amount);
     
     constructor() frxETHMinter(address(0), address(0), address(0), address(0), address(0)) {
-        // plumeStaking = IPlumeStaking(_plumeStaking);
-        // _setupRole(DEFAULT_ADMIN_ROLE, _owner);
-        // _setupRole(REBALANCER_ROLE, _owner);
-        // _setupRole(CLAIMER_ROLE, _owner);
-        // _setupRole(HANDLER_ROLE, frxETHAddress);
         _disableInitializers();
     }
 
