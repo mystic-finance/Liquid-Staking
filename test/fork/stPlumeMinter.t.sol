@@ -3174,198 +3174,198 @@ contract StPlumeMinterForkTest is Test {
         
     }
 
-    function test_adminSyncUserRewardsCycles() public {
-        // Submit ETH from user1
-        vm.prank(user1);
-        minter.submit{value: 10 ether}();
+    // function test_adminSyncUserRewardsCycles() public {
+    //     // Submit ETH from user1
+    //     vm.prank(user1);
+    //     minter.submit{value: 10 ether}();
 
-        vm.prank(owner);
-        minterRewards.loadRewards{value: 2 ether}();
+    //     vm.prank(owner);
+    //     minterRewards.loadRewards{value: 2 ether}();
         
-        // Create 3 reward cycles
-        for (uint i = 0; i <= 3; i++) {
-            // Generate rewards
-            vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 0.5 ether);
-            minter.getClaimableReward();
+    //     // Create 3 reward cycles
+    //     for (uint i = 0; i <= 3; i++) {
+    //         // Generate rewards
+    //         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 0.5 ether);
+    //         minter.getClaimableReward();
 
-            vm.warp(minterRewards.rewardsCycleEnd() + 1);
-            vm.prank(owner);
-            minterRewards.loadRewards{value: 2 ether}();
+    //         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+    //         vm.prank(owner);
+    //         minterRewards.loadRewards{value: 2 ether}();
             
-            // Sync cycle
-            vm.warp(minterRewards.rewardsCycleEnd() + 1);
-            minterRewards.syncRewards();
-        }
+    //         // Sync cycle
+    //         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+    //         minterRewards.syncRewards();
+    //     }
         
-        // Get cycle count
-        uint256 cycleCount = 4;
+    //     // Get cycle count
+    //     uint256 cycleCount = 4;
         
-        // Reset user's lastCycleClaimed to simulate unclaimed cycles
-        uint256 startCycle = cycleCount - 4;
-        vm.store(
-            address(minterRewards),
-            keccak256(abi.encode(user1, uint256(4))), // userRewards[user1].lastCycleClaimed slot
-            bytes32(startCycle)
-        );
+    //     // Reset user's lastCycleClaimed to simulate unclaimed cycles
+    //     uint256 startCycle = cycleCount - 4;
+    //     vm.store(
+    //         address(minterRewards),
+    //         keccak256(abi.encode(user1, uint256(4))), // userRewards[user1].lastCycleClaimed slot
+    //         bytes32(startCycle)
+    //     );
         
-        // Verify reset worked
-        (,
-        ,
-        uint256 z,
-        uint256 a) = minterRewards.userRewards(user1);
-        assertEq(a, startCycle);
+    //     // Verify reset worked
+    //     (,
+    //     ,
+    //     uint256 z,
+    //     uint256 a) = minterRewards.userRewards(user1);
+    //     assertEq(a, startCycle);
         
-        // Record initial rewards
-        uint256 initialRewards = z;
+    //     // Record initial rewards
+    //     uint256 initialRewards = z;
         
-        // Sync first cycle
-        vm.prank(owner);
-        minterRewards.adminSyncUserRewardsCycles(user1, startCycle, startCycle + 2);
+    //     // Sync first cycle
+    //     vm.prank(owner);
+    //     minterRewards.adminSyncUserRewardsCycles(user1, startCycle, startCycle + 2);
         
-        // Check intermediate state
-        (,
-        ,
-        uint256 c,
-        uint256 b) = minterRewards.userRewards(user1);
-        assertEq(b, startCycle + 2);
-        uint256 midRewards = c;
-        assertGt(midRewards, initialRewards, "First sync should accrue rewards");
+    //     // Check intermediate state
+    //     (,
+    //     ,
+    //     uint256 c,
+    //     uint256 b) = minterRewards.userRewards(user1);
+    //     assertEq(b, startCycle + 2);
+    //     uint256 midRewards = c;
+    //     assertGt(midRewards, initialRewards, "First sync should accrue rewards");
         
-        // Sync remaining cycles
-        vm.prank(owner);
-        minterRewards.adminSyncUserRewardsCycles(user1, startCycle + 2, cycleCount);
+    //     // Sync remaining cycles
+    //     vm.prank(owner);
+    //     minterRewards.adminSyncUserRewardsCycles(user1, startCycle + 2, cycleCount);
         
-        // Check final state
-        (,
-        ,
-        uint256 d,
-        uint256 e) = minterRewards.userRewards(user1);
-        assertEq(e, cycleCount);
-        uint256 finalRewards = d;
-        assertGt(finalRewards, midRewards, "Second sync should accrue additional rewards");
+    //     // Check final state
+    //     (,
+    //     ,
+    //     uint256 d,
+    //     uint256 e) = minterRewards.userRewards(user1);
+    //     assertEq(e, cycleCount);
+    //     uint256 finalRewards = d;
+    //     assertGt(finalRewards, midRewards, "Second sync should accrue additional rewards");
         
-        // User can now claim rewards
-        vm.prank(user1);
-        uint256 claimed = minter.unstakeRewards();
-        assertGt(claimed, 0, "User should be able to claim rewards");
+    //     // User can now claim rewards
+    //     vm.prank(user1);
+    //     uint256 claimed = minter.unstakeRewards();
+    //     assertGt(claimed, 0, "User should be able to claim rewards");
         
-        // Rewards should be reset after claiming
-        uint256 rewardsAfterClaim = minterRewards.getUserRewards(user1);
-        assertEq(rewardsAfterClaim, 0, "Rewards should be reset after claiming");
-    }
+    //     // Rewards should be reset after claiming
+    //     uint256 rewardsAfterClaim = minterRewards.getUserRewards(user1);
+    //     assertEq(rewardsAfterClaim, 0, "Rewards should be reset after claiming");
+    // }
 
-    function test_adminSyncUserRewardsCyclesHighCycle() public {
-        // Submit ETH from user1
-        vm.prank(user1);
-        minter.submit{value: 10 ether}();
+    // function test_adminSyncUserRewardsCyclesHighCycle() public {
+    //     // Submit ETH from user1
+    //     vm.prank(user1);
+    //     minter.submit{value: 10 ether}();
 
-        vm.prank(owner);
-        minterRewards.loadRewards{value: 2 ether}();
+    //     vm.prank(owner);
+    //     minterRewards.loadRewards{value: 2 ether}();
         
-        // Create 3 reward cycles
-        for (uint i = 0; i <= 3; i++) {
-            // Generate rewards
-            vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 0.5 ether);
-            minter.getClaimableReward();
+    //     // Create 3 reward cycles
+    //     for (uint i = 0; i <= 3; i++) {
+    //         // Generate rewards
+    //         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 0.5 ether);
+    //         minter.getClaimableReward();
 
-            vm.warp(minterRewards.rewardsCycleEnd() + 1);
-            vm.prank(owner);
-            minterRewards.loadRewards{value: 2 ether}();
+    //         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+    //         vm.prank(owner);
+    //         minterRewards.loadRewards{value: 2 ether}();
             
-            // Sync cycle
-            vm.warp(minterRewards.rewardsCycleEnd() + 1);
-            minterRewards.syncRewards();
-        }
+    //         // Sync cycle
+    //         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+    //         minterRewards.syncRewards();
+    //     }
         
-        // Get cycle count
-        uint256 cycleCount = 4;
+    //     // Get cycle count
+    //     uint256 cycleCount = 4;
         
-        // Reset user's lastCycleClaimed to simulate unclaimed cycles
-        uint256 startCycle = cycleCount - 4;
-        vm.store(
-            address(minterRewards),
-            keccak256(abi.encode(user1, uint256(4))), // userRewards[user1].lastCycleClaimed slot
-            bytes32(startCycle)
-        );
+    //     // Reset user's lastCycleClaimed to simulate unclaimed cycles
+    //     uint256 startCycle = cycleCount - 4;
+    //     vm.store(
+    //         address(minterRewards),
+    //         keccak256(abi.encode(user1, uint256(4))), // userRewards[user1].lastCycleClaimed slot
+    //         bytes32(startCycle)
+    //     );
         
-        // Verify reset worked
-        (,
-        ,
-        uint256 z,
-        uint256 a) = minterRewards.userRewards(user1);
-        assertEq(a, startCycle);
+    //     // Verify reset worked
+    //     (,
+    //     ,
+    //     uint256 z,
+    //     uint256 a) = minterRewards.userRewards(user1);
+    //     assertEq(a, startCycle);
         
-        // Record initial rewards
-        uint256 initialRewards = z;
+    //     // Record initial rewards
+    //     uint256 initialRewards = z;
         
-        // Sync first cycle
-        vm.prank(owner);
-        vm.expectRevert();
-        minterRewards.adminSyncUserRewardsCycles(user1,startCycle + 3, startCycle + 10);
-    }
+    //     // Sync first cycle
+    //     vm.prank(owner);
+    //     vm.expectRevert();
+    //     minterRewards.adminSyncUserRewardsCycles(user1,startCycle + 3, startCycle + 10);
+    // }
 
-    function test_adminSyncUserRewardsCyclesOverlappingCycles() public {
-        // Submit ETH from user1
-        vm.prank(user1);
-        minter.submit{value: 10 ether}();
+    // function test_adminSyncUserRewardsCyclesOverlappingCycles() public {
+    //     // Submit ETH from user1
+    //     vm.prank(user1);
+    //     minter.submit{value: 10 ether}();
 
-        vm.prank(owner);
-        minterRewards.loadRewards{value: 2 ether}();
+    //     vm.prank(owner);
+    //     minterRewards.loadRewards{value: 2 ether}();
         
-        // Create 3 reward cycles
-        for (uint i = 0; i < 3; i++) {
-            // Generate rewards
-            vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 0.5 ether);
-            minter.getClaimableReward();
+    //     // Create 3 reward cycles
+    //     for (uint i = 0; i < 3; i++) {
+    //         // Generate rewards
+    //         vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 0.5 ether);
+    //         minter.getClaimableReward();
 
-            vm.warp(minterRewards.rewardsCycleEnd() + 1);
-            vm.prank(owner);
-            minterRewards.loadRewards{value: 2 ether}();
+    //         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+    //         vm.prank(owner);
+    //         minterRewards.loadRewards{value: 2 ether}();
             
-            // Sync cycle
-            vm.warp(minterRewards.rewardsCycleEnd() + 1);
-            minterRewards.syncRewards();
-        }
+    //         // Sync cycle
+    //         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+    //         minterRewards.syncRewards();
+    //     }
         
-        // Get cycle count
-        uint256 cycleCount = 3;
+    //     // Get cycle count
+    //     uint256 cycleCount = 3;
         
-        // Reset user's lastCycleClaimed to simulate unclaimed cycles
-        uint256 startCycle = cycleCount - 3;
-        vm.store(
-            address(minterRewards),
-            keccak256(abi.encode(user1, uint256(4))), // userRewards[user1].lastCycleClaimed slot
-            bytes32(startCycle)
-        );
+    //     // Reset user's lastCycleClaimed to simulate unclaimed cycles
+    //     uint256 startCycle = cycleCount - 3;
+    //     vm.store(
+    //         address(minterRewards),
+    //         keccak256(abi.encode(user1, uint256(4))), // userRewards[user1].lastCycleClaimed slot
+    //         bytes32(startCycle)
+    //     );
         
-        // Verify reset worked
-        (,
-        ,
-        uint256 z,
-        uint256 a) = minterRewards.userRewards(user1);
-        assertEq(a, startCycle);
+    //     // Verify reset worked
+    //     (,
+    //     ,
+    //     uint256 z,
+    //     uint256 a) = minterRewards.userRewards(user1);
+    //     assertEq(a, startCycle);
         
-        // Record initial rewards
-        uint256 initialRewards = z;
+    //     // Record initial rewards
+    //     uint256 initialRewards = z;
         
-        // Sync first cycle
-        vm.prank(owner);
-        minterRewards.adminSyncUserRewardsCycles(user1, startCycle, startCycle + 2);
+    //     // Sync first cycle
+    //     vm.prank(owner);
+    //     minterRewards.adminSyncUserRewardsCycles(user1, startCycle, startCycle + 2);
         
-        // Check intermediate state
-        (,
-        ,
-        uint256 c,
-        uint256 b) = minterRewards.userRewards(user1);
-        assertEq(b, startCycle + 2);
-        uint256 midRewards = c;
-        assertGt(midRewards, initialRewards, "First sync should accrue rewards");
+    //     // Check intermediate state
+    //     (,
+    //     ,
+    //     uint256 c,
+    //     uint256 b) = minterRewards.userRewards(user1);
+    //     assertEq(b, startCycle + 2);
+    //     uint256 midRewards = c;
+    //     assertGt(midRewards, initialRewards, "First sync should accrue rewards");
         
-        // Sync remaining cycles
-        vm.prank(owner);
-        vm.expectRevert();
-        minterRewards.adminSyncUserRewardsCycles(user1, startCycle + 1, cycleCount);
-    }
+    //     // Sync remaining cycles
+    //     vm.prank(owner);
+    //     vm.expectRevert();
+    //     minterRewards.adminSyncUserRewardsCycles(user1, startCycle + 1, cycleCount);
+    // }
 }
 
 

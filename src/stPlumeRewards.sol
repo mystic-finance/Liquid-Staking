@@ -124,52 +124,52 @@ contract stPlumeRewards is Initializable, AccessControlUpgradeable, ReentrancyGu
         userRewards[user].lastCycleClaimed = cycleRewards.length;
     }
 
-    function adminSyncUserRewardsCycles(
-        address user, 
-        uint256 startCycle, 
-        uint256 endCycle
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        // handle stuck user with long unaccrued rewards
-        require(user != address(0), "Invalid user address");
-        require(startCycle < endCycle, "Invalid cycle range");
-        require(endCycle <= cycleRewards.length, "End cycle out of bounds");
-        require(startCycle >= userRewards[user].lastCycleClaimed, "Start cycle already claimed");
+    // function adminSyncUserRewardsCycles(
+    //     address user, 
+    //     uint256 startCycle, 
+    //     uint256 endCycle
+    // ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+    //     // handle stuck user with long unaccrued rewards
+    //     require(user != address(0), "Invalid user address");
+    //     require(startCycle < endCycle, "Invalid cycle range");
+    //     require(endCycle <= cycleRewards.length, "End cycle out of bounds");
+    //     require(startCycle >= userRewards[user].lastCycleClaimed, "Start cycle already claimed");
         
-        uint256 balance = frxETHToken.balanceOf(user);
-        uint256 totalYield = 0;
-        uint256 lastCycleRewards;
-        uint256 accruedCycleRewards;
+    //     uint256 balance = frxETHToken.balanceOf(user);
+    //     uint256 totalYield = 0;
+    //     uint256 lastCycleRewards;
+    //     uint256 accruedCycleRewards;
         
-        // Calculate rewards for the specified range of cycles
-        for (uint256 i = startCycle; i < endCycle; i++) {
-            CycleRewards memory cycle = cycleRewards[i];
-            if (cycle.totalSupply > 0) {
-                totalYield += (balance * cycle.rewards) / cycle.totalSupply;
-                lastCycleRewards = cycle.rewards;
-                accruedCycleRewards += cycle.rewards;
-            }
-        }        
-        userRewards[user].rewardsAccrued += totalYield;
+    //     // Calculate rewards for the specified range of cycles
+    //     for (uint256 i = startCycle; i < endCycle; i++) {
+    //         CycleRewards memory cycle = cycleRewards[i];
+    //         if (cycle.totalSupply > 0) {
+    //             totalYield += (balance * cycle.rewards) / cycle.totalSupply;
+    //             lastCycleRewards = cycle.rewards;
+    //             accruedCycleRewards += cycle.rewards;
+    //         }
+    //     }        
+    //     userRewards[user].rewardsAccrued += totalYield;
 
-        // Update the user's last claimed cycle if this sync completes their history
-        if (endCycle == cycleRewards.length) {
-            (uint256 accruedRewards, uint256 currentRewards) = _getSplitYield();
-            uint256 totalSupply = frxETHToken.totalSupply();
+    //     // Update the user's last claimed cycle if this sync completes their history
+    //     if (endCycle == cycleRewards.length) {
+    //         (uint256 accruedRewards, uint256 currentRewards) = _getSplitYield();
+    //         uint256 totalSupply = frxETHToken.totalSupply();
             
-            if (totalSupply > 0) {
-                uint256 eligibleRewards = currentRewards > userRewards[user].rewardInCycle ? currentRewards - userRewards[user].rewardInCycle : 0;
-                userRewards[user].rewardsAccrued += (eligibleRewards * balance / totalSupply);
-            }
+    //         if (totalSupply > 0) {
+    //             uint256 eligibleRewards = currentRewards > userRewards[user].rewardInCycle ? currentRewards - userRewards[user].rewardInCycle : 0;
+    //             userRewards[user].rewardsAccrued += (eligibleRewards * balance / totalSupply);
+    //         }
 
-            userRewards[user].lastCycleClaimed = cycleRewards.length;
-            userRewards[user].rewardInCycle = currentRewards;
-            userRewards[user].rewardsBefore = accruedRewards + currentRewards; // max total accrued rewards
-        } else {
-            userRewards[user].lastCycleClaimed = endCycle;
-            userRewards[user].rewardInCycle = lastCycleRewards;
-            userRewards[user].rewardsBefore += accruedCycleRewards; // partial accrued rewards
-        }
-    }
+    //         userRewards[user].lastCycleClaimed = cycleRewards.length;
+    //         userRewards[user].rewardInCycle = currentRewards;
+    //         userRewards[user].rewardsBefore = accruedRewards + currentRewards; // max total accrued rewards
+    //     } else {
+    //         userRewards[user].lastCycleClaimed = endCycle;
+    //         userRewards[user].rewardInCycle = lastCycleRewards;
+    //         userRewards[user].rewardsBefore += accruedCycleRewards; // partial accrued rewards
+    //     }
+    // }
     
     /// @notice Split the yield between accrued and current rewards
     function _getSplitYield() internal view returns (uint256, uint256) {
