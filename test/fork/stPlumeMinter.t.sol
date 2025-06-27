@@ -3254,6 +3254,56 @@ contract StPlumeMinterForkTest is Test {
         assertEq(rewardsAfterClaim, 0, "Rewards should be reset after claiming");
     }
 
+    function test_adminSyncUserRewardsCyclesHighCycle() public {
+        // Submit ETH from user1
+        vm.prank(user1);
+        minter.submit{value: 10 ether}();
+
+        vm.prank(owner);
+        minterRewards.loadRewards{value: 2 ether}();
+        
+        // Create 3 reward cycles
+        for (uint i = 0; i <= 3; i++) {
+            // Generate rewards
+            vm.deal(address(mockPlumeStaking), address(mockPlumeStaking).balance + 0.5 ether);
+            minter.getClaimableReward();
+
+            vm.warp(minterRewards.rewardsCycleEnd() + 1);
+            vm.prank(owner);
+            minterRewards.loadRewards{value: 2 ether}();
+            
+            // Sync cycle
+            vm.warp(minterRewards.rewardsCycleEnd() + 1);
+            minterRewards.syncRewards();
+        }
+        
+        // Get cycle count
+        uint256 cycleCount = 4;
+        
+        // Reset user's lastCycleClaimed to simulate unclaimed cycles
+        uint256 startCycle = cycleCount - 4;
+        vm.store(
+            address(minterRewards),
+            keccak256(abi.encode(user1, uint256(4))), // userRewards[user1].lastCycleClaimed slot
+            bytes32(startCycle)
+        );
+        
+        // Verify reset worked
+        (,
+        ,
+        uint256 z,
+        uint256 a) = minterRewards.userRewards(user1);
+        assertEq(a, startCycle);
+        
+        // Record initial rewards
+        uint256 initialRewards = z;
+        
+        // Sync first cycle
+        vm.prank(owner);
+        vm.expectRevert();
+        minterRewards.adminSyncUserRewardsCycles(user1,startCycle + 3, startCycle + 10);
+    }
+
     function test_adminSyncUserRewardsCyclesOverlappingCycles() public {
         // Submit ETH from user1
         vm.prank(user1);
