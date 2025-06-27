@@ -8,7 +8,7 @@ test-run-wrapped:; forge test --mc sfrxETHForkTest --fork-url https://rpc.plume.
 test-run-operator:; forge test --mc OperatorRegistryForkTest --fork-url https://rpc.plume.org -vvv
 test-run-all:; make test-run-upgrade && make test-run-operator &&  make test-run-staked
 
-test-run-specific:; forge test --mc StPlumeMinterForkTest --fork-url https://rpc.plume.org --mt test_integration_flow6_9 -vvvvv
+test-run-specific:; forge test --mc StPlumeMinterForkTest --fork-url https://rpc.plume.org --mt test_adminSyncUserRewardsCycles -vvvvv
 
 test-run-specific2:; forge test --mc UpgradeTests --fork-url https://rpc.plume.org --mt test_statePreservationDuringUpgrade -vvvvv
 
