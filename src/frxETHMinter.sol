@@ -56,12 +56,7 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuardUpgradeable {
         address sfrxETHAddress, 
         address _owner, 
         address _timelock_address
-    ) OperatorRegistry(_owner, _timelock_address) {
-        // depositContract = IDepositContract(depositContractAddress);
-        // frxETHToken = frxETH(frxETHAddress);
-        // withholdRatio = 20000; // No ETH is withheld initially (2%)
-        // currentWithheldETH = 0;
-    }
+    ) OperatorRegistry(_owner, _timelock_address) {}
 
     function _frxethminter_init(address depositContractAddress, address frxETHAddress, address sfrxETHAddress, address _owner, address _timelock_address) internal onlyInitializing {
         _operator_init(_owner, _timelock_address);

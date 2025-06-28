@@ -35,7 +35,7 @@ contract OperatorRegistry is OwnedUpgradeable {
     uint256[10] private __gap;
 
     constructor(address _owner, address _timelock_address) OwnedUpgradeable(_owner) {
-        // timelock_address = _timelock_address;
+       
     }
 
     function _operator_init(address _owner, address _timelock_address) internal onlyInitializing{
