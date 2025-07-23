@@ -15,12 +15,13 @@ contract Deploy is Script {
     address constant TIMELOCK_ADDRESS = 0x474302838E35DfC33967bA99AbbcB7560D48C634;
     uint32 constant REWARDS_CYCLE_LENGTH = 7 days;
     address constant PLUME_STAKING = 0x30c791E4654EdAc575FA1700eD8633CB2FEDE871;
+    address constant deployer = 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c;
 
     function run() public {
-        console.log('Deployer:', msg.sender);
-        // vm.startBroadcast();
+        console.log('Deployer:', deployer);
+        vm.startBroadcast(deployer);
 
-        frxETH fe = new frxETH(msg.sender, TIMELOCK_ADDRESS);
+        frxETH fe = new frxETH(deployer, TIMELOCK_ADDRESS);
         // // sfrxETH sfe = new sfrxETH(ERC20(address(fe)), REWARDS_CYCLE_LENGTH);
         ProxyAdmin admin = new ProxyAdmin();
         // Encode initializer
@@ -28,13 +29,13 @@ contract Deploy is Script {
         // bytes memory initData = abi.encodeWithSignature("initialize(address,address, address, address, address)", address(fe), address(0), msg.sender, TIMELOCK_ADDRESS, PLUME_STAKING);
         TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(address(impl), address(admin), bytes(""));
         stPlumeMinter fem = stPlumeMinter(payable(address(proxy)));
-        fem.initialize(address(fe), msg.sender, TIMELOCK_ADDRESS, PLUME_STAKING);
+        fem.initialize(address(fe), deployer, TIMELOCK_ADDRESS, PLUME_STAKING);
 
         stPlumeRewards implRewards = new stPlumeRewards();
         // bytes memory initData2 = abi.encodeWithSignature("initialize(address,address, address)", address(fe), address(fem), msg.sender);
         TransparentUpgradeableProxy proxyRewards = new TransparentUpgradeableProxy(address(implRewards), address(admin), bytes(""));
         stPlumeRewards femRewards = stPlumeRewards(payable(address(proxyRewards)));
-        femRewards.initialize(address(fe), address(fem), msg.sender);
+        femRewards.initialize(address(fe), address(fem), deployer);
         
         OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](2);
         validators[0] = OperatorRegistry.Validator(1);
@@ -43,7 +44,7 @@ contract Deploy is Script {
         // validators[3] = OperatorRegistry.Validator(4);
         // validators[4] = OperatorRegistry.Validator(5);
         // Post deploy
-        console.log('Deployer:', msg.sender);
+        console.log('Deployer:', deployer);
         fe.addMinter(address(fem));
         fem.setStPlumeRewards(address(femRewards));
         fe.updateStPlumeRewards(address(femRewards));
@@ -73,3 +74,11 @@ contract Deploy is Script {
 //   Deployer: 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c
 //   Minter deployed at 0x8F74472cfCc3c2fDadc7CBbF761bde38349Fa4D6
 //   Minter added to frxETH at 0xc8F76806482007C73Ee4d88D9B9B78C622c03e6C
+
+// mainnet test 2
+// == Logs ==
+//   Deployer: 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c
+//   Deployer: 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c
+//   Minter deployed at 0x253b9DdAE24F43F4F59507Fbd497d7d713563393
+//   Minter added to frxETH at 0x24D9a443D293Ab977E1fb723072408b5BA54F20b
+//   Minter added to frETh Rewards at 0xf0F16fCf0757D604E2e0c1EC2C0B50fd045b3D15

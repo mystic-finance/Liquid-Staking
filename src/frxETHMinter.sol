@@ -35,12 +35,12 @@ import "./OperatorRegistry.sol";
     Once +32 ETH has accumulated, adds it to a validator, which then deposits it for ETH 2.0 staking (depositEther())
     Withhold ratio refers to what percentage of ETH this contract keeps whenever a user makes a deposit. 0% is kept initially */
 contract frxETHMinter is OperatorRegistry, ReentrancyGuardUpgradeable {    
-    uint256 public constant DEPOSIT_SIZE = 32 ether; // ETH 2.0 minimum deposit size
+    uint256 public constant DEPOSIT_SIZE = 32 ether; // ETH 2.0 minimum deposit size --deprecated, backwards compatibility
     uint256 public constant RATIO_PRECISION = 1e6; // 1,000,000 
 
     uint256 public withholdRatio; // What we keep and don't deposit whenever someone submit()'s ETH
     uint256 public currentWithheldETH; // Needed for internal tracking
-    mapping(bytes => bool) public activeValidators; // Tracks validators (via their pubkeys) that already have 32 ETH in them
+    mapping(bytes => bool) public activeValidators; // Tracks validators (via their pubkeys) that already have 32 ETH in them --deprecated, backwards compatibility
 
     IDepositContract public depositContract; // ETH 2.0 deposit contract
     frxETH public frxETHToken;
@@ -136,16 +136,16 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuardUpgradeable {
     }
 
     /// @notice For emergencies if something gets stuck
-    function recoverEther(uint256 amount) external onlyByOwnGov {
-        (bool success,) = address(owner).call{ value: amount }("");
+    function recoverEther(uint256 amount, address payable to) external onlyByOwnGov {
+        (bool success,) = address(to).call{ value: amount }("");
         require(success, "Invalid transfer");
 
         emit EmergencyEtherRecovered(amount);
     }
 
     /// @notice For emergencies if someone accidentally sent some ERC20 tokens here
-    function recoverERC20(address tokenAddress, uint256 tokenAmount) external onlyByOwnGov {
-        require(IERC20(tokenAddress).transfer(owner, tokenAmount), "recoverERC20: Transfer failed");
+    function recoverERC20(address tokenAddress, uint256 tokenAmount, address to ) external onlyByOwnGov {
+        require(IERC20(tokenAddress).transfer(to, tokenAmount), "recoverERC20: Transfer failed");
 
         emit EmergencyERC20Recovered(tokenAddress, tokenAmount);
     }

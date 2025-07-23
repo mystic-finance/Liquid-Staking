@@ -327,3 +327,5 @@ The key components include:
 - Withdrawal and rewards management script in automation/
 - Tests in tests/fork/ with main test of stPlumeMinter.t.sol
 - Deployment script in script/ with DeployMinter.s.sol as the main deployment file
+
+## v2 start point a3034e601bdd88ad166139e72a6d167922077550
