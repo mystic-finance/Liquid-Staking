@@ -91,14 +91,14 @@ contract stPlumeRewards is Initializable, AccessControlUpgradeable, ReentrancyGu
             return rewardPerTokenStored;
         }
         return rewardPerTokenStored + (
-            (lastTimeRewardApplicable() - lastSync) * rewardRate * 1e18 / totalSupply
+            ((lastTimeRewardApplicable() - lastSync) * rewardRate * 1e18) / totalSupply
         );
     }
     
     /// @notice Get current rewards for a user (Synthetix earned() logic)
     function getUserRewards(address user) public view returns (uint256 yield) {
         uint256 balance = frxETHToken.balanceOf(user);
-        return (balance * (rewardPerToken() - userRewardPerTokenPaid[user]) / 1e18) + userRewards[user];
+        return ((balance * (rewardPerToken() - userRewardPerTokenPaid[user])) / 1e18) + userRewards[user];
     }
     
     function getRewardForDuration() external view returns (uint256) {
@@ -117,7 +117,7 @@ contract stPlumeRewards is Initializable, AccessControlUpgradeable, ReentrancyGu
     /// @notice Internal function to distribute rewards (Synthetix notifyRewardAmount logic)
     function _loadRewards(uint256 reward) internal {
         if (reward > 0) {
-            uint256 yieldAmount = reward * YIELD_FEE / RATIO_PRECISION;
+            uint256 yieldAmount = (reward * YIELD_FEE) / RATIO_PRECISION;
             uint256 netReward = reward - yieldAmount;
             
             // Send fee to protocol
