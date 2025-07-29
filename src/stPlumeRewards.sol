@@ -108,7 +108,7 @@ contract stPlumeRewards is Initializable, AccessControlUpgradeable, ReentrancyGu
     // ========== MUTATIVE FUNCTIONS ==========
     
     /// @notice Load rewards from external sources (adapted notifyRewardAmount)
-    function loadRewards() external payable onlyMinter updateReward(address(0)) returns (uint256 amount) {
+    function loadRewards() external payable onlyMinter nonReentrant updateReward(address(0)) returns (uint256 amount) {
         amount = msg.value;
         _loadRewards(amount);
         return amount;
@@ -123,7 +123,10 @@ contract stPlumeRewards is Initializable, AccessControlUpgradeable, ReentrancyGu
             // Send fee to protocol
             if (yieldAmount > 0) {
                 IstPlumeMinter(stPlumeMinter).addWithHoldFee{value: yieldAmount}();
-                (bool success,) = stPlumeMinter.call{value: reward - yieldAmount}(""); // send rewards to be staked to earn more rewards
+            }
+
+            if (netReward > 0) {
+                (bool success,) = stPlumeMinter.call{value: netReward}(""); // send rewards to be staked to earn more rewards
                 require(success, "Rewards transfer failed");
             }
             
@@ -158,20 +161,20 @@ contract stPlumeRewards is Initializable, AccessControlUpgradeable, ReentrancyGu
     }
     
     /// @notice Sync rewards manually (similar to notifyRewardAmount with 0)
-    function syncRewards() public updateReward(address(0)) {}
+    function syncRewards() nonReentrant onlyMinter public updateReward(address(0)) {}
 
-    function syncUser(address user) public updateReward(user) {}
+    function syncUser(address user) nonReentrant onlyMinter public updateReward(user) {}
     
     // ========== ADMIN FUNCTIONS ==========
     
     /// @notice Set yield fee percentage
-    function setYieldFee(uint256 newYieldFee) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setYieldFee(uint256 newYieldFee) nonReentrant external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(newYieldFee <= 500000, "Fees too high");
         YIELD_FEE = newYieldFee;
     }
     
     /// @notice Set rewards cycle length (adapted setRewardsDuration)
-    function setRewardsCycleLength(uint256 newLength) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setRewardsCycleLength(uint256 newLength) nonReentrant external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(
             block.timestamp > rewardsCycleEnd,
             "Previous rewards period must be complete before changing the duration"

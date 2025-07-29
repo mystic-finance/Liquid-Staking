@@ -890,6 +890,7 @@ contract StPlumeMinterForkTestMain is Test {
         
         // Fast forward to end of rewards cycle
         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        vm.startPrank(owner);
         minterRewards.syncRewards();
         
         // Test yield functions
@@ -1179,7 +1180,9 @@ contract StPlumeMinterForkTestMain is Test {
         minterRewards.loadRewards{value: 2 ether}();
         vm.warp(minterRewards.rewardsCycleEnd() + 1);
         // vm.startPrank(owner);
+        vm.startPrank(owner);
         minterRewards.syncRewards();
+        vm.stopPrank();
         
         // 4. Unstake half of the initial deposit
         uint256 unstakeAmount = 5 ether;
@@ -1344,6 +1347,7 @@ contract StPlumeMinterForkTestMain is Test {
         
         // Fast forward to end of rewards cycle
         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        vm.prank(owner);
         minterRewards.syncRewards();
 
         // console.log("lastRewardAmount", minterRewards.lastRewardAmount());
@@ -1448,7 +1452,9 @@ contract StPlumeMinterForkTestMain is Test {
         assertGt(userRewards, 0, "User should have rewards after loading and syncing");
 
         vm.warp(minterRewards.rewardsCycleEnd());
+        vm.startPrank(owner);
         minterRewards.syncRewards();
+        vm.stopPrank();
         // minterRewards.lastRewardAmount();
         // minterRewards.rewardsEth();
         // minterRewards.yieldEth();
@@ -1509,6 +1515,7 @@ contract StPlumeMinterForkTestMain is Test {
         
         // Fast forward to end of rewards cycle
         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        vm.prank(owner);
         minterRewards.syncRewards();
         
         // Check initial rewards
@@ -1531,6 +1538,7 @@ contract StPlumeMinterForkTestMain is Test {
         
         // Fast forward to end of next rewards cycle
         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        vm.prank(owner);
         minterRewards.syncRewards();
         
         // Check rewards after second cycle
@@ -1567,6 +1575,7 @@ contract StPlumeMinterForkTestMain is Test {
         
         // Fast forward to end of rewards cycle
         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        vm.prank(owner);
         minterRewards.syncRewards();
         
         // Check user1 rewards
@@ -1590,6 +1599,7 @@ contract StPlumeMinterForkTestMain is Test {
         
         // Fast forward to end of next rewards cycle
         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        vm.prank(owner);
         minterRewards.syncRewards();
         
         // Check rewards after second cycle
@@ -1623,6 +1633,7 @@ contract StPlumeMinterForkTestMain is Test {
         
         // Fast forward to end of rewards cycle
         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        vm.prank(owner);
         minterRewards.syncRewards();
         
         // Check initial rewards
@@ -1651,6 +1662,7 @@ contract StPlumeMinterForkTestMain is Test {
         
         // Fast forward to end of next rewards cycle
         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        vm.prank(owner);
         minterRewards.syncRewards();
         
         // Unstake rewards
@@ -1685,6 +1697,7 @@ contract StPlumeMinterForkTestMain is Test {
         
         // Fast forward to end of rewards cycle
         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        vm.prank(owner);
         minterRewards.syncRewards();
         
         // Check initial rewards
@@ -1703,6 +1716,7 @@ contract StPlumeMinterForkTestMain is Test {
         
         // Fast forward to end of next rewards cycle
         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        vm.prank(owner);
         minterRewards.syncRewards();
         
         // User should have no rewards since they have no frxETH
@@ -1725,6 +1739,7 @@ contract StPlumeMinterForkTestMain is Test {
         
         // Fast forward to end of next rewards cycle
         vm.warp(minterRewards.rewardsCycleEnd() + 1);
+        vm.prank(owner);
         minterRewards.syncRewards();
         
         // Now user should have rewards from the new cycle
@@ -3095,6 +3110,7 @@ contract StPlumeMinterForkTestMain is Test {
         // minterRewards.lastRewardAmount();
 
         vm.warp(minterRewards.rewardsCycleEnd());
+        vm.prank(owner);
         minterRewards.syncRewards();
         // minterRewards.lastRewardAmount();
 

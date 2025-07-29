@@ -212,7 +212,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
         require(totalAmount <= totalWithdrawable, "Full withdrawal not available yet");
         require(totalAmount <= totalInstantUnstaked, "Full withdrawal not available yet");
 
-        uint fee = totalAmount * INSTANT_REDEMPTION_FEE / RATIO_PRECISION;
+        uint fee = (totalAmount * INSTANT_REDEMPTION_FEE) / RATIO_PRECISION;
         request.amount = 0; request.timestamp = 0; request.deficit = 0;
         totalInstantUnstaked -= totalAmount;
         currentWithheldETH -= totalAmount;
@@ -238,7 +238,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
         uint256 totalAmount = amount + request.deficit;
         require(totalAmount > 0, "Non Zero Amount for Withdrawal");
         require(totalAmount <= totalWithdrawable + totalInstantUnstaked, "Full withdrawal not available yet");
-        uint fee = totalAmount * REDEMPTION_FEE / RATIO_PRECISION;
+        uint fee = (totalAmount * REDEMPTION_FEE) / RATIO_PRECISION;
         request.amount = 0; request.timestamp = 0; request.deficit = 0;
 
         if(totalWithdrawable > 0){
@@ -336,6 +336,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
     }
 
     function _loadRewards (uint256 amount) internal {
+        require(address(stPlumeRewards) != address(0), "Rewards not initialized");
         if(amount > 0){
             stPlumeRewards.loadRewards{value: amount}();
         }
@@ -372,6 +373,8 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
 
         if(_validatorId != 0){
             (uint256 validatorId, uint256 capacity) = _getValidatorInfo(_validatorId);
+            (bool active, , , ) = plumeStaking.getValidatorStats(_validatorId);
+            require(active, "Validator inactive");
             if(capacity > 0){
                 require(_amount <= capacity, "Validator capacity is not sufficient");
                 plumeStaking.stake{value: _amount}(uint16(validatorId)); //stake stops 0 capacity from coming into here to cause infinite loops
@@ -390,22 +393,24 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
             uint256 depositSize = remainingAmount;
             _validatorId = uint16(validators[index].validatorId);
             (uint256 validatorId, uint256 capacity) = getNextValidator(remainingAmount, _validatorId);
-            if(capacity == 0 || capacity < minStakeAmount) continue;
-            
-            if(capacity < depositSize) {
-                depositSize = capacity;
-            }
 
-            if(depositSize < minStakeAmount){
-                currentWithheldETH += remainingAmount; // depositSize should be from user dposit size here not capacity because it should have skipped if capacity < minstakeAmount
-                return depositedAmount;
-            }
+            if(capacity > 0 && capacity >= minStakeAmount) {
             
-            plumeStaking.stake{value: depositSize}(uint16(validatorId)); //stake stops 0 capacity from coming into here to cause infinite loops
-            remainingAmount -= depositSize;
-            depositedAmount += depositSize;
+                if(capacity < depositSize) {
+                    depositSize = capacity;
+                }
+
+                if(depositSize < minStakeAmount){
+                    currentWithheldETH += remainingAmount; // depositSize should be from user dposit size here not capacity because it should have skipped if capacity < minstakeAmount
+                    return depositedAmount;
+                }
+                
+                plumeStaking.stake{value: depositSize}(uint16(validatorId)); //stake stops 0 capacity from coming into here to cause infinite loops
+                remainingAmount -= depositSize;
+                depositedAmount += depositSize;
+                emit DepositSent(uint16(validatorId));
+            }
             index++;
-            emit DepositSent(uint16(validatorId));
         }
         require(remainingAmount == 0, "No validator with sufficient capacity to fulfill all deposit amount");
         
