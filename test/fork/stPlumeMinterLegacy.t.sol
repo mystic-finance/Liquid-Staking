@@ -198,7 +198,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(frxETHToken.balanceOf(user1), 3 ether);
         
         // Check withdrawal request
-        (uint256 requestAmount,  uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount,  uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount, 2 ether);
         // vm.prank(address(minter));
         // assertEq(requestTimestamp, mockPlumeStaking.cooldownEndDate());
@@ -228,14 +228,14 @@ contract StPlumeMinterForkTestLegacy is Test {
         
         // Check user1's ETH balance before withdrawal
         uint256 balanceBefore = user1.balance;
-        minter.withdrawalRequests(user1);
+        minter.withdrawalRequests(user1, 0);
         
         // // Expect Withdrawn event
         // vm.expectEmit(true, false, false, true);
         // emit Withdrawn(user1, 2 ether);
         
         // Withdraw
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         vm.stopPrank();
         
         // Check withdrawal result
@@ -243,7 +243,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertGt(user1.balance - balanceBefore, 2 ether - 0.1e18); //consider fee
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount,  uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount,  uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount, 0);
         assertEq(requestTimestamp, 0);
     }
@@ -274,7 +274,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         // emit Withdrawn(user1, 2 ether);
         
         // Withdraw
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         vm.stopPrank();
         
         // Check withdrawal result
@@ -282,7 +282,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertGt(user1.balance - balanceBefore, 0.1 ether - 0.001e18); //consider fee
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount,  uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount,  uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount, 0);
         assertEq(requestTimestamp, 0);
     }
@@ -314,7 +314,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         // emit Withdrawn(user1, 2 ether);
         
         // Withdraw
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         vm.stopPrank();
         // Check withdrawal result
         assertGt(amountWithdrawn, 0.1 ether - 0.001e18);
@@ -322,7 +322,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         uint256 currentWithheldETH2 = minter.currentWithheldETH();
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount, uint256 deficit,  uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit,  uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount, 0);
         assertEq(requestTimestamp, 0);
 
@@ -343,13 +343,13 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         vm.startPrank(owner);
-        uint256 amountRestaked = minter.restake(1);
+        uint256 amountRestaked = minter.restake(1, 0.5 ether);
         
         // Check restake result
-        assertGt(amountRestaked, 2 ether - 0.05e18);
+        assertGt(amountRestaked, 0.5 ether - 0.05e18);
         
         // Check user's cooled amount is now 0
         PlumeStakingStorage.StakeInfo memory stakeInfo = mockPlumeStaking.stakeInfo(user1);
@@ -608,7 +608,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         // Add new events
         // event AllRewardsClaimed(address indexed user, uint256 totalAmount);
         // event ValidatorRewardClaimed(address indexed user, address indexed token, uint16 indexed validatorId, uint256 amount);
-        minter.withdraw(user1); // Should fail
+        minter.withdraw(user1, 0); // Should fail
         vm.stopPrank();
     }
 
@@ -690,7 +690,7 @@ contract StPlumeMinterForkTestLegacy is Test {
 
         vm.warp(block.timestamp + 30 days);
         vm.startPrank(user1);
-        minter.withdraw(user1);
+        minter.withdraw(user1, 0);
         
     }
     // function test_rewards_cycle() public {
@@ -743,7 +743,7 @@ contract StPlumeMinterForkTestLegacy is Test {
     //     uint256 withdrawnRewards = minter.unstakeRewards();
 
     //     vm.warp(block.timestamp + 86400);
-    //     minter.withdraw(user1);
+    //     minter.withdraw(user1, 0);
         
     //     // Verify rewards were withdrawn
     //     assertGt(withdrawnRewards, 0);
@@ -772,10 +772,10 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(unstaked, 2 ether);
         
         // Check withdrawal request timestamp is immediate (block.timestamp)
-        (uint256 amount, uint256 deficit,  uint256 timestamp,) = minter.withdrawalRequests(user1);
+        (uint256 amount, uint256 deficit,  uint256 timestamp,) = minter.withdrawalRequests(user1, 0);
 
         vm.startPrank(user1);
-        minter.withdraw(user1);
+        minter.withdraw(user1, 0);
         vm.stopPrank();
         assertEq(timestamp, block.timestamp);
     }
@@ -801,10 +801,10 @@ contract StPlumeMinterForkTestLegacy is Test {
         minter.processBatchUnstake();
         
         // Check withdrawal request timestamp is set to cooldown end date
-        (uint256 amount, uint256 deficit,  uint256 timestamp,) = minter.withdrawalRequests(user1);
+        (uint256 amount, uint256 deficit,  uint256 timestamp,) = minter.withdrawalRequests(user1, 0);
        vm.warp(timestamp);
         vm.startPrank(user1);
-        minter.withdraw(user1);
+        minter.withdraw(user1, 0);
         vm.stopPrank();
         
     }
@@ -823,7 +823,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         
         // Stake withheld ETH
         vm.prank(owner);
-        uint256 staked = minter.stakeWitheld(3 ether); //stakeWitheldForValidator
+        uint256 staked = minter.stakeWitheldForValidator(3 ether, 1); //stakeWitheldForValidator
         
         // Verify staking
         assertEq(staked, 3 ether);
@@ -870,7 +870,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         minter.claim(1);
 
         vm.prank(owner);
-        uint256 staked = minter.stakeWitheld(3 ether);
+        uint256 staked = minter.stakeWitheldForValidator(3 ether, 1);
         
         // Withdraw fees
         uint256 ownerBalanceBefore = owner.balance;
@@ -921,7 +921,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         frxETHToken.approve(address(minter), 2 ether);
         minter.unstake(2 ether);
 
-        (uint256 requestAmount, uint256 deficit,  uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit,  uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount, 2 ether);
         
         // Try to withdraw after cooldown ends
@@ -935,7 +935,7 @@ contract StPlumeMinterForkTestLegacy is Test {
 
          vm.warp(requestTimestamp);
         uint256 heldEth = minter.currentWithheldETH();
-        minter.withdraw(user1);
+        minter.withdraw(user1, 0);
         assertGt(user1.balance, balanceBefore + 2 ether - 0.1e18); //consider fee
         assertEq(frxETHToken.balanceOf(user1), 3 ether);
         vm.stopPrank();
@@ -1073,7 +1073,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         
         // Stake withheld ETH
         vm.startPrank(owner);
-        uint256 staked = minter.stakeWitheld(3 ether);
+        uint256 staked = minter.stakeWitheldForValidator(3 ether, 1);
         vm.stopPrank();
         
         // Verify staking
@@ -1094,7 +1094,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         // Try to stake withheld ETH as non-rebalancer
         vm.prank(user1);
         vm.expectRevert(); // Should revert due to missing role
-        minter.stakeWitheld(3 ether);
+        minter.stakeWitheldForValidator(3 ether, 1);
     }
     
     function test_stakeWitheld_insufficientFunds() public {
@@ -1110,7 +1110,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         // Try to stake more than available
         vm.prank(owner);
         vm.expectRevert(); // Should revert due to insufficient funds
-        minter.stakeWitheld(6 ether);
+        minter.stakeWitheldForValidator(6 ether, 1);
     }
 
     // Tests for claimAll function
@@ -1192,14 +1192,14 @@ contract StPlumeMinterForkTestLegacy is Test {
         _unstakeAndVerify(unstakeAmount, submitAmount, initialFrxETHSupply);
         
         // 5. Wait for cooldown and withdraw
-        (,, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (,, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(minter.nextBatchUnstakeTimePerValidator(1));
         vm.startPrank(owner);
         minter.processBatchUnstake();
 
         vm.startPrank(user1);
         vm.warp(requestTimestamp);
-        uint256 withdrawn = minter.withdraw(user1);
+        uint256 withdrawn = minter.withdraw(user1, 0);
         
         // Verify state after withdraw
         assertGt(withdrawn, unstakeAmount - 0.1 ether, "Withdrawn amount too small"); // Account for fees
@@ -1218,10 +1218,10 @@ contract StPlumeMinterForkTestLegacy is Test {
         vm.startPrank(owner);
         minter.processBatchUnstake();
 
-        (,, uint256 requestTimestamp2,) = minter.withdrawalRequests(user1);
+        (,, uint256 requestTimestamp2,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp2);
         vm.startPrank(user1);
-        uint256 rewardsWithdrawn = minter.withdraw(user1);
+        uint256 rewardsWithdrawn = minter.withdraw(user1, 0);
         
         // 8. Verify final state
         _verifyFinalState(
@@ -1380,12 +1380,12 @@ contract StPlumeMinterForkTestLegacy is Test {
         // Wait for cooldown and withdraw
         _updateBatchUnstake();
 
-        (,, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (,, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         vm.startPrank(user1);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 1.8 ether / 1e6;
@@ -1397,7 +1397,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH - currentWithheldETHBefore, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -1478,12 +1478,12 @@ contract StPlumeMinterForkTestLegacy is Test {
         // Wait for cooldown and withdraw
         _updateBatchUnstake();
 
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         vm.startPrank(user1);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.INSTANT_REDEMPTION_FEE() * 1.8 ether / 1e6;
@@ -1495,7 +1495,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertGt(currentWithheldETHBefore - currentWithheldETH, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -1648,7 +1648,7 @@ contract StPlumeMinterForkTestLegacy is Test {
 
         vm.warp(block.timestamp + 60 days);
         vm.startPrank(user1);
-        minter.withdraw(user1);
+        minter.withdraw(user1, 0);
         vm.stopPrank();
         
         // Generate more rewards
@@ -1762,10 +1762,10 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 100 ether / 1e6;
@@ -1777,7 +1777,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -1796,11 +1796,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 80 ether / 1e6;
@@ -1812,7 +1812,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH - currentWithheldETHBefore, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -1831,11 +1831,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 70 ether / 1e6;
@@ -1847,7 +1847,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH - currentWithheldETHBefore, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -1872,11 +1872,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.INSTANT_REDEMPTION_FEE() * 3.9 ether / 1e6;
@@ -1888,11 +1888,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETHBefore - currentWithheldETH, 3.9 ether);
 
         vm.startPrank(user2);
-        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2);
+        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2, 0);
         vm.warp(requestTimestamp2);
         uint currentWithheldETHBefore2 = minter.currentWithheldETH();
         uint256 balanceBefore2 = user2.balance;
-        uint256 amountWithdrawn2 = minter.withdraw(user2);
+        uint256 amountWithdrawn2 = minter.withdraw(user2, 0);
         uint256 balanceAfter2 = user2.balance;
         vm.stopPrank();
         uint fee2 = minter.REDEMPTION_FEE() * 3 ether / 1e6;
@@ -1923,11 +1923,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.INSTANT_REDEMPTION_FEE() * 4 ether / 1e6;
@@ -1940,11 +1940,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH,0);
 
         vm.startPrank(user2);
-        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2);
+        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2, 0);
         vm.warp(requestTimestamp2);
         uint currentWithheldETHBefore2 = minter.currentWithheldETH();
         uint256 balanceBefore2 = user2.balance;
-        uint256 amountWithdrawn2 = minter.withdraw(user2);
+        uint256 amountWithdrawn2 = minter.withdraw(user2, 0);
         uint256 balanceAfter2 = user2.balance;
         vm.stopPrank();
         uint fee2 = minter.REDEMPTION_FEE() * 3 ether / 1e6;
@@ -1975,11 +1975,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 100 ether / 1e6;
@@ -1991,11 +1991,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETHBefore - currentWithheldETH, 0);
 
         vm.startPrank(user2);
-        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2);
+        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2, 0);
         vm.warp(requestTimestamp2);
         uint currentWithheldETHBefore2 = minter.currentWithheldETH();
         uint256 balanceBefore2 = user2.balance;
-        uint256 amountWithdrawn2 = minter.withdraw(user2);
+        uint256 amountWithdrawn2 = minter.withdraw(user2, 0);
         uint256 balanceAfter2 = user2.balance;
         vm.stopPrank();
         uint fee2 = minter.INSTANT_REDEMPTION_FEE() * 3 ether / 1e6;
@@ -2029,11 +2029,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.INSTANT_REDEMPTION_FEE() * 3.9 ether / 1e6;
@@ -2047,11 +2047,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(minter.totalInstantUnstaked() - previousTrackedInstantUnstaked, 0);
 
         vm.startPrank(user2);
-        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2);
+        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2, 0);
         vm.warp(requestTimestamp2);
         uint currentWithheldETHBefore2 = minter.currentWithheldETH();
         uint256 balanceBefore2 = user2.balance;
-        uint256 amountWithdrawn2 = minter.withdraw(user2);
+        uint256 amountWithdrawn2 = minter.withdraw(user2, 0);
         uint256 balanceAfter2 = user2.balance;
         vm.stopPrank();
         uint fee2 = minter.REDEMPTION_FEE() * 100 ether / 1e6;
@@ -2088,12 +2088,12 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
         minter.totalInstantUnstaked();
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         minter.totalInstantUnstaked();
@@ -2106,12 +2106,12 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH, 100 ether);
 
         vm.startPrank(user2);
-        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2);
+        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2, 0);
         vm.warp(requestTimestamp2);
         uint currentWithheldETHBefore2 = minter.currentWithheldETH();
         uint256 balanceBefore2 = user2.balance;
         minter.totalInstantUnstaked();
-        uint256 amountWithdrawn2 = minter.withdraw(user2);
+        uint256 amountWithdrawn2 = minter.withdraw(user2, 0);
         uint256 balanceAfter2 = user2.balance;
         vm.stopPrank();
         minter.totalInstantUnstaked();
@@ -2149,12 +2149,12 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
         minter.totalInstantUnstaked();
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         minter.totalInstantUnstaked();
@@ -2167,12 +2167,12 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH, 84 ether);
 
         vm.startPrank(user2);
-        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2);
+        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2, 0);
         vm.warp(requestTimestamp2);
         uint currentWithheldETHBefore2 = minter.currentWithheldETH();
         uint256 balanceBefore2 = user2.balance;
         minter.totalInstantUnstaked();
-        uint256 amountWithdrawn2 = minter.withdraw(user2);
+        uint256 amountWithdrawn2 = minter.withdraw(user2, 0);
         uint256 balanceAfter2 = user2.balance;
         vm.stopPrank();
         minter.totalInstantUnstaked();
@@ -2231,11 +2231,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         minter.processBatchUnstake();
 
         vm.startPrank(user1);
-        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint256 balanceBefore = user1.balance;
         uint currentWithheldETHBefore = minter.currentWithheldETH();
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 100 ether / 1e6;
@@ -2247,7 +2247,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETHBefore - currentWithheldETHAfter, 0); // currentWithHeldEth is not to be changed
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2269,11 +2269,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint256 balanceBefore = user1.balance;
         uint currentWithheldETHBefore = minter.currentWithheldETH();
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 80 ether / 1e6;
@@ -2285,7 +2285,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETHBefore - currentWithheldETHAfter, 0); // currentWithHeldEth is not to be changed
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2310,11 +2310,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         minter.processBatchUnstake();
 
         vm.startPrank(user1);
-        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint256 balanceBefore = user1.balance;
         uint currentWithheldETHBefore = minter.currentWithheldETH();
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 70 ether / 1e6;
@@ -2326,7 +2326,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETHBefore - currentWithheldETHAfter, 0); // currentWithHeldEth is not to be changed
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2345,11 +2345,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint256 balanceBefore = user1.balance;
         uint currentWithheldETHBefore = minter.currentWithheldETH();
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.INSTANT_REDEMPTION_FEE() * 1 ether / 1e6;
@@ -2361,7 +2361,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETHBefore - currentWithheldETHAfter, 1 ether); // currentWithHeldEth is not to be changed
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2382,11 +2382,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint256 balanceBefore = user1.balance;
         uint currentWithheldETHBefore = minter.currentWithheldETH();
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.INSTANT_REDEMPTION_FEE() * 1 ether / 1e6;
@@ -2398,7 +2398,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETHBefore - currentWithheldETHAfter, 1 ether); // currentWithHeldEth is not to be changed
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2419,11 +2419,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (, , uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint256 balanceBefore = user1.balance;
         uint currentWithheldETHBefore = minter.currentWithheldETH();
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.INSTANT_REDEMPTION_FEE() * 2 ether / 1e6;
@@ -2435,7 +2435,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETHBefore - currentWithheldETHAfter, 2 ether); // currentWithHeldEth is not to be changed
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2454,10 +2454,10 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 100 ether / 1e6;
@@ -2469,7 +2469,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2502,11 +2502,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 80 ether / 1e6;
@@ -2518,7 +2518,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH - currentWithheldETHBefore, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2537,11 +2537,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 70 ether / 1e6;
@@ -2553,7 +2553,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH - currentWithheldETHBefore, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2572,10 +2572,10 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 100 ether / 1e6;
@@ -2587,7 +2587,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2608,11 +2608,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 100 ether / 1e6;
@@ -2624,7 +2624,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH - currentWithheldETHBefore, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2648,12 +2648,12 @@ contract StPlumeMinterForkTestLegacy is Test {
         minter.processBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         
         vm.warp(requestTimestamp);
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 100 ether / 1e6;
@@ -2665,7 +2665,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH - currentWithheldETHBefore, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2686,11 +2686,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 100 ether / 1e6;
@@ -2702,7 +2702,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH - currentWithheldETHBefore, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2722,11 +2722,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 100 ether / 1e6;
@@ -2738,7 +2738,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH, currentWithheldETHBefore);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2762,11 +2762,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         minter.processBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 100 ether / 1e6;
@@ -2778,7 +2778,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH, currentWithheldETHBefore);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2797,11 +2797,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 80 ether / 1e6;
@@ -2813,7 +2813,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH - currentWithheldETHBefore, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2833,11 +2833,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 70 ether / 1e6;
@@ -2849,7 +2849,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH - currentWithheldETHBefore, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2868,11 +2868,11 @@ contract StPlumeMinterForkTestLegacy is Test {
          _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 70 ether / 1e6;
@@ -2884,7 +2884,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH - currentWithheldETHBefore, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2903,10 +2903,10 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 100 ether / 1e6;
@@ -2918,7 +2918,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2954,11 +2954,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 70 ether / 1e6;
@@ -2970,7 +2970,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH - currentWithheldETHBefore, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -2991,11 +2991,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 70 ether / 1e6;
@@ -3007,7 +3007,7 @@ contract StPlumeMinterForkTestLegacy is Test {
         assertEq(currentWithheldETH - currentWithheldETHBefore, 0);
         
         // Check withdrawal request was cleared
-        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount1,  uint256 deficit1, uint256 requestTimestamp1,) = minter.withdrawalRequests(user1, 0);
         assertEq(requestAmount1, 0);
         assertEq(requestTimestamp1, 0);
         assertEq(deficit1, 0);
@@ -3058,11 +3058,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         _updateBatchUnstake();
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 70 ether / 1e6;
@@ -3075,11 +3075,11 @@ contract StPlumeMinterForkTestLegacy is Test {
 
 
         vm.startPrank(user2);
-        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2);
+        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2, 0);
         vm.warp(requestTimestamp2);
         uint currentWithheldETHBefore2 = minter.currentWithheldETH();
         uint256 balanceBefore2 = user2.balance;
-        uint256 amountWithdrawn2 = minter.withdraw(user2);
+        uint256 amountWithdrawn2 = minter.withdraw(user2, 0);
         uint256 balanceAfter2 = user2.balance;
         vm.stopPrank();
         uint fee2 = minter.INSTANT_REDEMPTION_FEE() * 20 ether / 1e6;
@@ -3140,11 +3140,11 @@ contract StPlumeMinterForkTestLegacy is Test {
         minter.submit{value: 1000 ether}(); // increase currentWithHeldEth from 2 to 22 and 22 > 7
 
         vm.startPrank(user1);
-        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
         vm.warp(requestTimestamp);
         uint currentWithheldETHBefore = minter.currentWithheldETH();
         uint256 balanceBefore = user1.balance;
-        uint256 amountWithdrawn = minter.withdraw(user1);
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
         uint fee = minter.REDEMPTION_FEE() * 5 ether / 1e6;
@@ -3157,11 +3157,11 @@ contract StPlumeMinterForkTestLegacy is Test {
 
 
         vm.startPrank(user2);
-        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2);
+        (uint256 requestAmount2, uint256 deficit2, uint256 requestTimestamp2,) = minter.withdrawalRequests(user2, 0);
         vm.warp(requestTimestamp2);
         uint currentWithheldETHBefore2 = minter.currentWithheldETH();
         uint256 balanceBefore2 = user2.balance;
-        uint256 amountWithdrawn2 = minter.withdraw(user2);
+        uint256 amountWithdrawn2 = minter.withdraw(user2, 0);
         uint256 balanceAfter2 = user2.balance;
         vm.stopPrank();
         uint fee2 = minter.INSTANT_REDEMPTION_FEE() * 3 ether / 1e6;

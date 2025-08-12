@@ -38,7 +38,8 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
     }
 
     address public nativeToken;
-    mapping(address => WithdrawalRequest) public withdrawalRequests;
+    mapping (address => mapping(uint256=> WithdrawalRequest)) public withdrawalRequests;
+    mapping (address => uint256) public withdrawalRequestCount;
     mapping (uint16 => uint256) public maxValidatorPercentage;
     mapping (uint16 => uint256) public totalQueuedWithdrawalsPerValidator;
     mapping (uint16 => uint256) public nextBatchUnstakeTimePerValidator;
@@ -132,14 +133,13 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
     }
 
     /// @notice Restake from cooling/parked funds to a specific validator
-    function restake(uint16 validatorId) external nonReentrant onlyRole(REBALANCER_ROLE) returns (uint256 amountRestaked) {
+    function restake(uint16 validatorId, uint256 amount) external nonReentrant onlyRole(REBALANCER_ROLE) returns (uint256 amountRestaked) {
         _rebalance();
         require(_checkValidator(uint256(validatorId)), "Validator does not exist");
-        IPlumeStaking.CooldownView memory cooldown = _getCoolDownPerValidator(uint16(validatorId));
-        if(cooldown.amount == 0){return 0;}
-        plumeStaking.restake(validatorId, cooldown.amount);
-        emit Restaked(address(this), validatorId, cooldown.amount);
-        return cooldown.amount;
+        if(amount == 0){return 0;}
+        plumeStaking.restake(validatorId, amount);
+        emit Restaked(address(this), validatorId, amount);
+        return amount;
     }
 
     function unstakeGov(uint16 validatorId, uint256 amount) external nonReentrant onlyByOwnGov returns (uint256 amountRestaked) {
@@ -158,11 +158,6 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
         uint256 balanceAfter = address(this).balance;
         currentWithheldETH += balanceAfter - balanceBefore;
         amountWithdrawn = balanceAfter - balanceBefore;
-    }
-
-    /// @notice Restake from withheld funds
-    function stakeWitheld(uint256 amount) external nonReentrant onlyRole(REBALANCER_ROLE) returns (uint256 amountRestaked) {
-        return _stakeWitheldForValidator(amount, 0);
     }
 
     function stakeWitheldForValidator(uint256 amount, uint16 validatorId) public nonReentrant onlyRole(REBALANCER_ROLE) returns (uint256 amountRestaked) {
@@ -189,21 +184,21 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
         return amount;
     }
 
-    function withdraw(address recipient) external nonReentrant returns (uint256 amount) {
+    function withdraw(address recipient, uint256 id) external nonReentrant returns (uint256 amount) {
         _rebalance();
-        WithdrawalRequest storage request = withdrawalRequests[msg.sender];
+        WithdrawalRequest storage request = withdrawalRequests[msg.sender][id];
         require(block.timestamp >= request.timestamp, "Cooldown not complete");
         require(request.amount > 0, "Non Zero Amount for Withdrawal");
 
         if(request.timestamp == request.createdTimestamp){
-            return _instantWithdraw(recipient);
+            return _instantWithdraw(recipient, id);
         }else{
-            return _withdraw(recipient);
+            return _withdraw(recipient, id);
         }
     }
 
-    function _instantWithdraw(address recipient) internal returns (uint256 amount) {
-        WithdrawalRequest storage request = withdrawalRequests[msg.sender];
+    function _instantWithdraw(address recipient, uint256 id) internal returns (uint256 amount) {
+        WithdrawalRequest storage request = withdrawalRequests[msg.sender][id];
         uint256 totalWithdrawable = currentWithheldETH;
         require(totalWithdrawable > 0, "Withdrawal not available yet");
 
@@ -228,8 +223,8 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
     }
 
     /// @notice Withdraw available funds that have completed cooling
-    function _withdraw(address recipient) internal returns (uint256 amount) {
-        WithdrawalRequest storage request = withdrawalRequests[msg.sender];
+    function _withdraw(address recipient, uint256 id) internal returns (uint256 amount) {
+        WithdrawalRequest storage request = withdrawalRequests[msg.sender][id];
         uint256 totalWithdrawable = plumeStaking.amountWithdrawable();
         require(totalWithdrawable + totalInstantUnstaked > 0, "Withdrawal not available yet");
 
@@ -435,7 +430,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
         }
         uint256 cooldownTimestamp;
         uint256 deficit;
-        require(withdrawalRequests[msg.sender].amount == 0, "Withdrawal already requested");
+        require(withdrawalRequests[msg.sender][withdrawalRequestCount[msg.sender]].amount == 0, "Withdrawal already requested");
     
         // Check if we can cover this with withheld ETH
         if (currentWithheldETH >= amount && currentWithheldETH >= amount + totalInstantUnstaked) { //instant redemption
@@ -505,12 +500,13 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
 
         require(amountUnstaked > 0, "No funds were unstaked");
         require(amountUnstaked + deficit >= amount, "Not enough funds unstaked");
-        withdrawalRequests[msg.sender] = WithdrawalRequest({
+        withdrawalRequests[msg.sender][withdrawalRequestCount[msg.sender]] = WithdrawalRequest({
             amount: amountUnstaked,
             deficit: deficit,
             timestamp: cooldownTimestamp,
             createdTimestamp: block.timestamp
         });
+        withdrawalRequestCount[msg.sender]++;
         
         emit Unstaked(msg.sender, amountUnstaked);
         totalUnstaked += amountUnstaked + deficit;

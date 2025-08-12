@@ -151,10 +151,10 @@ contract UpgradeTests is Test {
         minterV2.processBatchUnstake();
         vm.stopPrank();
 
-        (,, uint256 requestTimestamp,) = minterV2.withdrawalRequests(user);
+        (,, uint256 requestTimestamp,) = minterV2.withdrawalRequests(user, 0);
         vm.warp(requestTimestamp);
         vm.prank(user);
-        minterV2.withdraw(user);
+        minterV2.withdraw(user, 0);
         
         // Check we can use new functionality
         vm.prank(owner);
