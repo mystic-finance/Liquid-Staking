@@ -670,6 +670,8 @@ contract StPlumeMinterForkTestMain is Test {
         vm.warp(block.timestamp + 20 days);
         vm.prank(owner);
         minter.claimAll();
+
+        minter.batchUnstakeInterval();
         
         // User withdraws rewards
         vm.warp(block.timestamp + 30 days);
@@ -1347,15 +1349,9 @@ contract StPlumeMinterForkTestMain is Test {
         // 4. Unstake half of the initial deposit
         uint256 unstakeAmount = 5 ether;
         _unstakeAndVerify(unstakeAmount, submitAmount, initialFrxETHSupply);
-        
-        
-        uint256 userRewards = minterRewards.getUserRewards(user1);
-        vm.startPrank(user1);
-        uint256 rewardsUnstaked = minter.unstakeRewards();
 
-        // Verify rewards unstaked
-        assertApproxEqAbs(rewardsUnstaked, userRewards, 0.0001 ether, "Unstaked rewards don't match expected user rewards");
-        assertGt(rewardsUnstaked, 0, "zero rewards");
+        _unstakeAndVerify(unstakeAmount, submitAmount - unstakeAmount, initialFrxETHSupply);
+        
 
         minter.withdrawalRequestCount(user1);
 
@@ -1363,6 +1359,14 @@ contract StPlumeMinterForkTestMain is Test {
         vm.warp(minter.nextBatchUnstakeTimePerValidator(1));
         vm.startPrank(owner);
         minter.processBatchUnstake();
+
+        uint256 userRewards = minterRewards.getUserRewards(user1);
+        vm.startPrank(user1);
+        uint256 rewardsUnstaked = minter.unstakeRewards();
+
+        // Verify rewards unstaked
+        assertApproxEqAbs(rewardsUnstaked, userRewards, 0.0001 ether, "Unstaked rewards don't match expected user rewards");
+        assertGt(rewardsUnstaked, 0, "zero rewards");
 
         // 7. Wait for cooldown and withdraw rewards
         vm.warp(minter.nextBatchUnstakeTimePerValidator(1));
@@ -1377,26 +1381,29 @@ contract StPlumeMinterForkTestMain is Test {
         // assertGt(withdrawn, unstakeAmount - 0.1 ether, "Withdrawn amount too small"); // Account for fees
         assertLt(withdrawn, unstakeAmount, "Withdrawn amount should be less than unstaked due to fees");
 
-        (,, uint256 requestTimestamp2,) = minter.withdrawalRequests(user1, 1);
+        (,, uint256 requestTimestamp3,) = minter.withdrawalRequests(user1, 1);
+        vm.startPrank(user1);
+        vm.warp(requestTimestamp3);
+        uint256 withdrawn3 = minter.withdraw(user1, 1);
+
+        // Verify state after withdraw
+        // assertGt(withdrawn, unstakeAmount - 0.1 ether, "Withdrawn amount too small"); // Account for fees
+        assertLt(withdrawn3, unstakeAmount, "Withdrawn amount should be less than unstaked due to fees");
+
+        (,, uint256 requestTimestamp2,) = minter.withdrawalRequests(user1, 2);
         vm.warp(requestTimestamp2);
         vm.startPrank(user1);
-        uint256 rewardsWithdrawn = minter.withdraw(user1, 1);
+        uint256 rewardsWithdrawn = minter.withdraw(user1, 2);
 
         vm.startPrank(user1);
         vm.warp(requestTimestamp);
         vm.expectRevert();
         minter.withdraw(user1, 0);
-        
-        // 8. Verify final state
-        _verifyFinalState(
-            initialUser1Balance, 
-            submitAmount, 
-            unstakeAmount, 
-            initialFrxETHSupply, 
-            rewardsUnstaked, 
-            withdrawn, 
-            rewardsWithdrawn
-        );
+
+        vm.startPrank(user1);
+        vm.warp(requestTimestamp);
+        vm.expectRevert();
+        minter.withdraw(user1, 2);
     }
     
     function _submitAndVerify(

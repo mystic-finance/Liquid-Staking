@@ -37,18 +37,19 @@ contract Deploy is Script {
         stPlumeRewards femRewards = stPlumeRewards(payable(address(proxyRewards)));
         femRewards.initialize(address(fe), address(fem), deployer);
         
-        OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](2);
-        validators[0] = OperatorRegistry.Validator(1);
-        validators[1] = OperatorRegistry.Validator(2);
-        // validators[2] = OperatorRegistry.Validator(3);
-        // validators[3] = OperatorRegistry.Validator(4);
-        // validators[4] = OperatorRegistry.Validator(5);
+        OperatorRegistry.Validator[] memory validators = new OperatorRegistry.Validator[](5);
+        validators[0] = OperatorRegistry.Validator(3);
+        validators[1] = OperatorRegistry.Validator(9);
+        validators[2] = OperatorRegistry.Validator(8);
+        validators[3] = OperatorRegistry.Validator(5);
+        validators[4] = OperatorRegistry.Validator(1);
         // Post deploy
         console.log('Deployer:', deployer);
         fe.addMinter(address(fem));
         fem.setStPlumeRewards(address(femRewards));
         fe.updateStPlumeRewards(address(femRewards));
         fem.addValidators(validators);
+        femRewards.grantRole(femRewards.MINTER_ROLE(), 0x0402447db83Fc8c30c3E36DaA03E9a59d2eAb453); //approve keeper
 
         console.log("Minter deployed at", address(fem));
         console.log("Minter added to frxETH at", address(fe));
@@ -82,3 +83,21 @@ contract Deploy is Script {
 //   Minter deployed at 0x253b9DdAE24F43F4F59507Fbd497d7d713563393
 //   Minter added to frxETH at 0x24D9a443D293Ab977E1fb723072408b5BA54F20b
 //   Minter added to frETh Rewards at 0xf0F16fCf0757D604E2e0c1EC2C0B50fd045b3D15
+
+// Mainnet Test Final
+// Deployer: 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c
+//   Deployer: 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c
+//   Minter deployed at 0xd19dE4F03e5F255292339c16E3EA3b39c3480677
+//   Minter added to frxETH at 0xC0Aa9d797d79953CD56B042166fd39C124b40a08
+//   Minter added to frETh Rewards at 0x82839Ac47C6B4f66f5e8d6b45EF23f25CB669faa
+//   Proxy admin is at 0x70FBa7741DF916286F6841919AD48E42ecD72277
+
+// Mainnet Main
+// == Logs ==
+//   Deployer: 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c
+//   Deployer: 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c
+//   Minter deployed at 0xE4274Bc25BA313364DE71F104acF27746c6278Cb
+//   Minter added to frxETH at 0x5c982097b505A3940823a11E6157e9C86aF08987
+//   Minter added to frETh Rewards at 0x2E420ac76a43fC94F05168Cb8DCf4996b717dA17
+//   Proxy admin is at 0xB7791d7039284c2021C0F77120C84609B03BB2E9
+
