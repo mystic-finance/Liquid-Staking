@@ -34,6 +34,12 @@ interface IstPlumeRewards {
     /// @notice Get current total yield (legacy compatibility)
     /// @return yield The current yield rate
     function getYield() external view returns (uint256);
+
+    function rewardPerTokenStored() external view returns (uint256);
+
+    function YIELD_FEE() external view returns (uint256);
+
+    function RATIO_PRECISION() external view returns (uint256);
     
     
     // ========== MUTATIVE FUNCTIONS ==========

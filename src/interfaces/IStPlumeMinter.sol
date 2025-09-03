@@ -17,6 +17,8 @@ interface IstPlumeMinter {
     function withdrawalQueueThreshold() external view returns (uint256);
     function batchUnstakeInterval() external view returns (uint256);
     function stPlumeRewards() external view returns (IstPlumeRewards);
+    function currentWithheldETH() external view returns (uint256);
+    function totalInstantUnstaked() external view returns (uint256);
 
     // External Functions
     function submitForValidator(uint16 validatorId) external payable;
