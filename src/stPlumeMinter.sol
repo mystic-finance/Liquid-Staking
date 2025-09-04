@@ -73,7 +73,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
         INSTANT_REDEMPTION_FEE = 5000; // 0.5%
         minStake = 1e17;
         withdrawalQueueThreshold = 100000 ether;
-        batchUnstakeInterval = 1 days;
+        batchUnstakeInterval = 21 days + 1 hours;
         nativeToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     }
 
@@ -97,7 +97,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
 
         if (!active) return (validatorId, 0);
         (, capacity_) = _getValidatorInfo(uint16(validatorId));
-        uint256 percentage = ((stakedAmount + depositAmount) * RATIO_PRECISION) / totalStaked;
+        uint256 percentage = ((stakedAmount + depositAmount) * RATIO_PRECISION) / (totalStaked + depositAmount);
         if(maxValidatorPercentage[validatorId]>0 && percentage > maxValidatorPercentage[validatorId]){
             return (validatorId, 0);
         }
