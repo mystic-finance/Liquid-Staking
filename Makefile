@@ -10,7 +10,7 @@ test-run-operator:; forge test --mc OperatorRegistryForkTest --fork-url https://
 test-run-myPlumeFeed:; forge test --mc MyPlumeFeedForkTest --fork-url https://rpc.plume.org -vvvvv
 test-run-all:; make test-run-upgrade && make test-run-operator &&  make test-run-staked
 
-test-run-specific:; forge test --mc StPlumeMinterForkTestMain --fork-url https://rpc.plume.org --mt test_withdraw_rewards -vvvvv
+test-run-specific:; forge test --mc StPlumeMinterForkTestMain --fork-url https://rpc.plume.org --mt test_integration_flow4_1 -vvvvv
 
 test-run-specific2:; forge test --mc UpgradeTests --fork-url https://rpc.plume.org --mt test_statePreservationDuringUpgrade -vvvvv
 

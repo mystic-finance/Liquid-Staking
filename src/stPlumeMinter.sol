@@ -514,7 +514,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
     }
 
     function _processBatchUnstake(uint16 validatorId) internal {
-        if (totalQueuedWithdrawalsPerValidator[validatorId] == 0) return;
+        // if (totalQueuedWithdrawalsPerValidator[validatorId] == 0) return;
         
         // Calculate how much to unstake from validators
         uint256 amountToUnstake = totalQueuedWithdrawalsPerValidator[validatorId];

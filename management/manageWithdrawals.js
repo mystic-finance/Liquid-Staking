@@ -144,82 +144,78 @@ async function checkAndScheduleBatchUnstake() {
     "INFO",
     `Checking batch unstake times for ${validatorIds.length} validators...`
   );
+  const validatorId = validatorIds[0];
 
-  for (const validatorId of validatorIds) {
-    try {
+  // for (const validatorId of validatorIds) {
+  try {
+    const nextBatchTime = await minterContract.nextBatchUnstakeTimePerValidator(
+      validatorId
+    );
+    const nextBatchTimeTs = nextBatchTime.toNumber() * 1000;
+    const now = Date.now();
+    const delay = nextBatchTimeTs - now;
+
+    if (delay <= 0) {
+      // The time is in the past, but we should still check if a batch needs processing.
+      // The contract logic handles whether to unstake, so it's safe to call.
+      log(
+        "INFO",
+        `Batch unstake time for validator ${validatorId} is in the past. Triggering processBatchUnstake now.`
+      );
+      // Clear any old scheduled task
+      scheduledTasks.processUnstake.delete(validatorId);
+      await minterContract
+        .processBatchUnstake()
+        .then((tx) => {
+          log("INFO", `processBatchUnstake transaction sent. Hash: ${tx.hash}`);
+          return tx.wait();
+        })
+        .then((receipt) => {
+          log(
+            "INFO",
+            `processBatchUnstake transaction confirmed. Block: ${receipt.blockNumber}`
+          );
+        });
+
       const nextBatchTime =
         await minterContract.nextBatchUnstakeTimePerValidator(validatorId);
-      const nextBatchTimeTs = nextBatchTime.toNumber() * 1000;
-      const now = Date.now();
-      const delay = nextBatchTimeTs - now;
+      const nextBatchTimeTs = nextBatchTime.toNumber() * 1000; // Convert to milliseconds
+      scheduledTasks.processUnstake.set(validatorId, nextBatchTimeTs);
+    } else {
+      log(
+        "INFO",
+        `Next batch unstake for validator ${validatorId} is at ${new Date(
+          nextBatchTimeTs
+        ).toLocaleString()}. Scheduling call.`
+      );
+      scheduledTasks.processUnstake.set(validatorId, nextBatchTimeTs);
 
-      if (delay <= 0) {
-        // The time is in the past, but we should still check if a batch needs processing.
-        // The contract logic handles whether to unstake, so it's safe to call.
-        log(
-          "INFO",
-          `Batch unstake time for validator ${validatorId} is in the past. Triggering processBatchUnstake now.`
-        );
-        // Clear any old scheduled task
-        scheduledTasks.processUnstake.delete(validatorId);
-        await minterContract
-          .processBatchUnstake()
-          .then((tx) => {
-            log(
-              "INFO",
-              `processBatchUnstake transaction sent. Hash: ${tx.hash}`
-            );
-            return tx.wait();
-          })
-          .then((receipt) => {
-            log(
-              "INFO",
-              `processBatchUnstake transaction confirmed. Block: ${receipt.blockNumber}`
-            );
-          });
-
-        const nextBatchTime =
-          await minterContract.nextBatchUnstakeTimePerValidator(validatorId);
-        const nextBatchTimeTs = nextBatchTime.toNumber() * 1000; // Convert to milliseconds
-        scheduledTasks.processUnstake.set(validatorId, nextBatchTimeTs);
-      } else {
-        log(
-          "INFO",
-          `Next batch unstake for validator ${validatorId} is at ${new Date(
-            nextBatchTimeTs
-          ).toLocaleString()}. Scheduling call.`
-        );
-        scheduledTasks.processUnstake.set(validatorId, nextBatchTimeTs);
-
-        setTimeout(async () => {
-          try {
-            log(
-              "INFO",
-              `Executing scheduled processBatchUnstake for validator ${validatorId}.`
-            );
-            const tx = await minterContract.processBatchUnstake();
-            log(
-              "INFO",
-              `processBatchUnstake transaction sent. Hash: ${tx.hash}`
-            );
-            const receipt = await tx.wait();
-            log(
-              "INFO",
-              `processBatchUnstake transaction confirmed. Block: ${receipt.blockNumber}`
-            );
-          } catch (e) {
-            log(
-              "ERROR",
-              `Scheduled processBatchUnstake call for validator ${validatorId} failed.`,
-              e
-            );
-          }
-        }, delay);
-      }
-    } catch (error) {
-      log("ERROR", `Failed to process validator ${validatorId}.`, error);
+      setTimeout(async () => {
+        try {
+          log(
+            "INFO",
+            `Executing scheduled processBatchUnstake for validator ${validatorId}.`
+          );
+          const tx = await minterContract.processBatchUnstake();
+          log("INFO", `processBatchUnstake transaction sent. Hash: ${tx.hash}`);
+          const receipt = await tx.wait();
+          log(
+            "INFO",
+            `processBatchUnstake transaction confirmed. Block: ${receipt.blockNumber}`
+          );
+        } catch (e) {
+          log(
+            "ERROR",
+            `Scheduled processBatchUnstake call for validator ${validatorId} failed.`,
+            e
+          );
+        }
+      }, delay);
     }
+  } catch (error) {
+    log("ERROR", `Failed to process validator ${validatorId}.`, error);
   }
+  // }
 }
 
 async function main() {
