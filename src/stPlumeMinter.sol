@@ -164,6 +164,15 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
         return _stakeWitheldForValidator(amount, validatorId);
     }
 
+    function addFundsDirectly(uint16 validatorId) public payable nonReentrant onlyRole(REBALANCER_ROLE) {
+        if(validatorId > 0){
+            _depositEther(msg.value, validatorId);
+        }else{
+            currentWithheldETH += msg.value;
+        }
+        emit ETHSubmitted(address(this), address(this), msg.value, validatorId);
+    }
+
     function _stakeWitheldForValidator(uint256 amount, uint16 validatorId) internal returns (uint256 amountRestaked) {
         _rebalance();
         require(currentWithheldETH >= amount + totalInstantUnstaked, "Guardrails failed, not enough idle funds");

@@ -3427,6 +3427,67 @@ contract StPlumeMinterForkTestMain is Test {
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
     }
+
+    function test_integration_flow6_12() public {
+        // First submit ETH
+        vm.prank(user1);
+        minter.submit{value: 100 ether}();
+
+        // Unstake
+        _updateBatchUnstake();
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 100 ether);
+        minter.unstakeFromValidator(50 ether, 1);
+        vm.warp(minter.nextBatchUnstakeTimePerValidator(1)+ 4 hours);
+        vm.startPrank(owner);
+        minter.processBatchUnstake();
+
+        vm.startPrank(owner);
+        minter.addFundsDirectly{value: 10 ether}(1);
+        // _updateBatchUnstake();
+        // _updateBatchUnstake();
+
+        vm.startPrank(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
+        vm.warp(requestTimestamp + 4 hours);
+        uint currentWithheldETHBefore = minter.currentWithheldETH();
+        uint256 balanceBefore = user1.balance;
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
+        uint256 balanceAfter = user1.balance;
+        vm.stopPrank();
+    }
+
+    function test_integration_flow6_13() public {
+        // First submit ETH
+        vm.prank(user1);
+        minter.submit{value: 100 ether}();
+
+        // Unstake
+        _updateBatchUnstake();
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 100 ether);
+        minter.unstakeFromValidator(50 ether, 1);
+        vm.warp(minter.nextBatchUnstakeTimePerValidator(1)+ 4 hours);
+        vm.startPrank(owner);
+        minter.processBatchUnstake();
+
+        uint currentWithheldETHBefore = minter.currentWithheldETH();
+        vm.startPrank(owner);
+        minter.addFundsDirectly{value: 10 ether}(0);
+        assertGt(minter.currentWithheldETH(), currentWithheldETHBefore);
+
+        // _updateBatchUnstake();
+        // _updateBatchUnstake();
+
+        vm.startPrank(user1);
+        (uint256 requestAmount, uint256 deficit, uint256 requestTimestamp,) = minter.withdrawalRequests(user1, 0);
+        vm.warp(requestTimestamp + 4 hours);
+        
+        uint256 balanceBefore = user1.balance;
+        uint256 amountWithdrawn = minter.withdraw(user1, 0);
+        uint256 balanceAfter = user1.balance;
+        vm.stopPrank();
+    }
 }
 
 
