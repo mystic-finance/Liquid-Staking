@@ -540,6 +540,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
 
     /// @notice Rebalance the contract
     function _rebalance() internal {
+        require(!depositEtherPaused, "Rebalancing ETH is paused");
         uint256 amount = _claim();
         _loadRewards(amount);
     }

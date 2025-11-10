@@ -49,7 +49,7 @@ contract Deploy is Script {
         fem.setStPlumeRewards(address(femRewards));
         fe.updateStPlumeRewards(address(femRewards));
         fem.addValidators(validators);
-        femRewards.grantRole(femRewards.MINTER_ROLE(), 0x0402447db83Fc8c30c3E36DaA03E9a59d2eAb453); //approve keeper
+        femRewards.grantRole(femRewards.MINTER_ROLE(), 0x9149375776CdbB08674fa2b4Ed69da6235DE97A8); //approve keeper
 
         console.log("Minter deployed at", address(fem));
         console.log("Minter added to frxETH at", address(fe));
@@ -101,3 +101,12 @@ contract Deploy is Script {
 //   Minter added to frETh Rewards at 0x2E420ac76a43fC94F05168Cb8DCf4996b717dA17
 //   Proxy admin is at 0xB7791d7039284c2021C0F77120C84609B03BB2E9
 
+
+// Launched Mainnet
+// == Logs ==
+//   Deployer: 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c
+//   Deployer: 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c
+//   Minter deployed at 0xAD8874006ee4EBe311066E47c650A74171b8F624
+//   Minter added to frxETH at 0xc2387E0feA344D1edEC3E93Bf2124f909f74938C
+//   Minter added to frETh Rewards at 0x6B9D6efF3f9B15b0655C5f5c2f27Fcc9A87f9087
+//   Proxy admin is at 0x99E18E728497c4732b68D27417A8b7e4dcf70080
