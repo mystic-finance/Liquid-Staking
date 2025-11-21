@@ -1,0 +1,15 @@
+{
+  "name": "stplume-automation",
+  "version": "1.0.0",
+  "description": "Keeper script to manage stPlumeMinter batch unstaking and reward syncing.",
+  "main": "manageWithdrawals.js",
+  "scripts": {
+    "start": "node manageWithdrawals.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "ethers": "^5.8.0"
+  }
+}

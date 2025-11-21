@@ -21,25 +21,26 @@ pragma solidity ^0.8.0;
 // Travis Moore: https://github.com/FortisFortuna
 // Dennis: https://github.com/denett
 
-import "./Utils/Owned.sol";
+import "./Utils/OwnedUpgradeable.sol";
 
 /// @title Keeps track of validators used for ETH 2.0 staking
 /// @notice A permissioned owner can add and removed them at will
-contract OperatorRegistry is Owned {
-
+contract OperatorRegistry is OwnedUpgradeable {
     struct Validator {
-        bytes pubKey;
-        bytes signature;
-        bytes32 depositDataRoot;
+        uint256 validatorId;
     }
 
     Validator[] validators; // Array of unused / undeposited validators that can be used at a future time
-    bytes curr_withdrawal_pubkey; // Pubkey for ETH 2.0 withdrawal creds. If you change it, you must empty the validators array
     address public timelock_address;
+    uint256[10] private __gap;
 
-    constructor(address _owner, address _timelock_address, bytes memory _withdrawal_pubkey) Owned(_owner) {
+    constructor(address _owner, address _timelock_address) OwnedUpgradeable(_owner) {
+       
+    }
+
+    function _operator_init(address _owner, address _timelock_address) internal onlyInitializing{
+        _owned_init(_owner);
         timelock_address = _timelock_address;
-        curr_withdrawal_pubkey = _withdrawal_pubkey;
     }
 
     modifier onlyByOwnGov() {
@@ -50,9 +51,9 @@ contract OperatorRegistry is Owned {
     /// @notice Add a new validator
     /** @dev You should verify offchain that the validator is indeed valid before adding it
         Reason we don't do that here is for gas */
-    function addValidator(Validator calldata validator) public onlyByOwnGov {
+    function addValidator(Validator calldata validator) public virtual onlyByOwnGov {
         validators.push(validator);
-        emit ValidatorAdded(validator.pubKey, curr_withdrawal_pubkey);
+        emit ValidatorAdded(validator.validatorId, bytes(""));
     }
 
     /// @notice Add multiple new validators in one function call
@@ -75,7 +76,7 @@ contract OperatorRegistry is Owned {
         validators[to_idx] = fromVal;
         validators[from_idx] = toVal;
 
-        emit ValidatorsSwapped(fromVal.pubKey, toVal.pubKey, from_idx, to_idx);
+        emit ValidatorsSwapped(fromVal.validatorId, toVal.validatorId, from_idx, to_idx);
     }
 
     /// @notice Remove validators from the end of the validators array, in case they were added in error
@@ -92,7 +93,7 @@ contract OperatorRegistry is Owned {
         a swap and pop will occur instead of a more gassy loop */ 
     function removeValidator(uint256 remove_idx, bool dont_care_about_ordering) public onlyByOwnGov {
         // Get the pubkey for the validator to remove (for informational purposes)
-        bytes memory removed_pubkey = validators[remove_idx].pubKey;
+        uint256 removed_validatorId = validators[remove_idx].validatorId;
 
         // Less gassy to swap and pop
         if (dont_care_about_ordering){
@@ -118,7 +119,7 @@ contract OperatorRegistry is Owned {
             }
         }
 
-        emit ValidatorRemoved(removed_pubkey, remove_idx, dont_care_about_ordering);
+        emit ValidatorRemoved(removed_validatorId, remove_idx, dont_care_about_ordering);
     }
 
     // Internal
@@ -126,10 +127,7 @@ contract OperatorRegistry is Owned {
     function getNextValidator()
         internal
         returns (
-            bytes memory pubKey,
-            bytes memory withdrawalCredentials,
-            bytes memory signature,
-            bytes32 depositDataRoot
+            uint256 validatorId
         )
     {
         // Make sure there are free validators available
@@ -141,10 +139,7 @@ contract OperatorRegistry is Owned {
         validators.pop();
 
         // Return the validator's information
-        pubKey = popped.pubKey;
-        withdrawalCredentials = curr_withdrawal_pubkey;
-        signature = popped.signature;
-        depositDataRoot = popped.depositDataRoot;
+        validatorId = popped.validatorId;
     }
 
     /// @notice Return the information of the i'th validator in the registry
@@ -152,38 +147,23 @@ contract OperatorRegistry is Owned {
         view
         external
         returns (
-            bytes memory pubKey,
-            bytes memory withdrawalCredentials,
-            bytes memory signature,
-            bytes32 depositDataRoot
+            uint256 validatorId
         )
     {
         Validator memory v = validators[i];
 
         // Return the validator's information
-        pubKey = v.pubKey;
-        withdrawalCredentials = curr_withdrawal_pubkey;
-        signature = v.signature;
-        depositDataRoot = v.depositDataRoot;
+        validatorId = v.validatorId;
     }
 
     /// @notice Returns a Validator struct of the given inputs to make formatting addValidator inputs easier
     function getValidatorStruct(
-        bytes memory pubKey, 
-        bytes memory signature, 
-        bytes32 depositDataRoot
+        uint256 validatorId
     ) external pure returns (Validator memory) {
-        return Validator(pubKey, signature, depositDataRoot);
+        return Validator(validatorId);
     }
 
-    /// @notice Requires empty validator stack as changing withdrawal creds invalidates signature
-    /// @dev May need to call clearValidatorArray() first
-    function setWithdrawalCredential(bytes memory _new_withdrawal_pubkey) external onlyByOwnGov {
-        require(numValidators() == 0, "Clear validator array first");
-        curr_withdrawal_pubkey = _new_withdrawal_pubkey;
 
-        emit WithdrawalCredentialSet(_new_withdrawal_pubkey);
-    }
 
     /// @notice Empties the validator array
     /// @dev Need to do this before setWithdrawalCredential()
@@ -207,10 +187,10 @@ contract OperatorRegistry is Owned {
 
     event TimelockChanged(address timelock_address);
     event WithdrawalCredentialSet(bytes _withdrawalCredential);
-    event ValidatorAdded(bytes pubKey, bytes withdrawalCredential);
+    event ValidatorAdded(uint256 validatorId, bytes withdrawalCredential);
     event ValidatorArrayCleared();
-    event ValidatorRemoved(bytes pubKey, uint256 remove_idx, bool dont_care_about_ordering);
+    event ValidatorRemoved(uint256 validatorId, uint256 remove_idx, bool dont_care_about_ordering);
     event ValidatorsPopped(uint256 times);
-    event ValidatorsSwapped(bytes from_pubKey, bytes to_pubKey, uint256 from_idx, uint256 to_idx);
+    event ValidatorsSwapped(uint256 from_validatorId, uint256 to_validatorId, uint256 from_idx, uint256 to_idx);
     event KeysCleared();
 }

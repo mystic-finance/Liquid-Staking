@@ -1,0 +1,17 @@
+{
+  "lib/ERC4626": {
+    "rev": "6cf2bee5d784169acb02cc6ac0489ca197a4f149"
+  },
+  "lib/forge-std": {
+    "rev": "2a2ce3692b8c1523b29de3ec9d961ee9fbbc43a6"
+  },
+  "lib/openzeppelin-contracts": {
+    "rev": "8d908fe2c20503b05f888dd9f702e3fa6fa65840"
+  },
+  "lib/openzeppelin-contracts-upgradeable": {
+    "rev": "a40cb0bda838c2ef3dfc252c179f5c37c32e80c4"
+  },
+  "lib/solmate": {
+    "rev": "62e0943c013a66b2720255e2651450928f4eed7a"
+  }
+}
