@@ -55,6 +55,8 @@ contract UpgradeTests is Test {
         
         // Deploy frxETH token
         frxETHToken = new frxETH(owner, timelock);
+
+        vm.deal(address(user), 10000 ether);
         
         // Setup ProxyAdmin
         vm.startPrank(owner);
@@ -230,6 +232,69 @@ contract UpgradeTests is Test {
             address(newRewardsImpl)
         );
         
+    }
+
+    function test_upgradeMainnetContracts() public {
+        // Setup initial proxies
+       // Deploy upgraded implementation
+        admin = ProxyAdmin(0x99E18E728497c4732b68D27417A8b7e4dcf70080);
+        minter = stPlumeMinter(payable(0xAD8874006ee4EBe311066E47c650A74171b8F624));
+        owner = 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c;
+
+        vm.prank(user);
+        minter.submit{value: 100 ether}();
+
+        vm.prank(owner);
+        minter.togglePauseDepositEther();
+
+
+        stPlumeMinter newImplementation = new stPlumeMinter();
+        uint withholdEth = minter.withHoldEth();
+        uint validators = minter.numValidators();
+        uint currentWithheldETH = minter.currentWithheldETH();
+        uint withholdRatio = minter.withholdRatio();
+        uint redemptionFee = minter.REDEMPTION_FEE();
+
+        // Perform upgrade
+        vm.startPrank(owner);
+        vm.expectEmit(true, false, false, false);
+        emit Upgraded(address(newImplementation));
+        admin.upgrade(TransparentUpgradeableProxy(payable(address(minter))), address(newImplementation));
+        vm.stopPrank();
+               
+        // Check state is preserved
+        assertEq(minter.withHoldEth(), withholdEth);
+        assertEq(minter.withholdRatio(), withholdRatio);
+        assertEq(minter.REDEMPTION_FEE(), redemptionFee);
+        assertEq(minter.numValidators(), validators);
+        assertEq(minter.currentWithheldETH(), currentWithheldETH);
+        assertEq(minter.depositEtherPaused(), true);
+
+        vm.prank(owner);
+        minter.grantRole(keccak256("PAUSER_ROLE"), owner);
+        vm.prank(owner);
+        minter.togglePauseDepositEther();
+
+        vm.startPrank(user);
+        frxETHToken.approve(address(minter), 50 ether);
+        minter.unstake(50 ether);
+        vm.stopPrank();
+
+        vm.warp(minter.nextBatchUnstakeTimePerValidator(1));
+        vm.startPrank(owner);
+        minter.processBatchUnstake();
+        vm.stopPrank();
+
+        (,, uint256 requestTimestamp,) = minter.withdrawalRequests(user, 0);
+        vm.warp(requestTimestamp);
+        vm.prank(user);
+        minter.withdraw(user, 0);
+
+        vm.prank(owner);
+        minter.grantRole(keccak256("PAUSER_ROLE"), user);
+
+        vm.prank(user);
+        minter.togglePauseDepositEther();
     }
     
     function test_proxyAdminTransfer() public {

@@ -121,20 +121,6 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuardUpgradeable {
         emit WithheldETHMoved(to, amount);
     }
 
-    /// @notice Toggle allowing submites
-    function togglePauseSubmits() external onlyByOwnGov {
-        submitPaused = !submitPaused;
-
-        emit SubmitPaused(submitPaused);
-    }
-
-    /// @notice Toggle allowing depositing ETH to validators
-    function togglePauseDepositEther() external onlyByOwnGov {
-        depositEtherPaused = !depositEtherPaused;
-
-        emit DepositEtherPaused(depositEtherPaused);
-    }
-
     /// @notice For emergencies if something gets stuck
     function recoverEther(uint256 amount, address payable to) external onlyByOwnGov {
         (bool success,) = address(to).call{ value: amount }("");

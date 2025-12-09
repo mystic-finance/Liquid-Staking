@@ -542,6 +542,7 @@ contract StPlumeMinterForkTestMain is Test {
     // Additional tests for pausing functionality
     function test_toggle_pause_submits() public {
         vm.startPrank(owner);
+        minter.grantRole(keccak256("PAUSER_ROLE"), owner);
         
         // Check initial state
         assertEq(minter.submitPaused(), false);
@@ -567,13 +568,30 @@ contract StPlumeMinterForkTestMain is Test {
     }
     
     function test_toggle_pause_deposit_ether() public {
+        vm.prank(user1);
+        minter.submit{value: 10 ether}();
         vm.startPrank(owner);
+        minter.grantRole(keccak256("PAUSER_ROLE"), user3);
         
         // Check initial state
         assertEq(minter.depositEtherPaused(), false);
-        
-        // Toggle pause deposits
+        // Try to submit while paused (should fail)
+        vm.stopPrank();
+
+         // Toggle pause deposits
+        vm.prank(user3);
         minter.togglePauseDepositEther();
+
+        vm.prank(user1);
+        vm.expectRevert("Depositing ETH is paused");
+        minter.submit{value: 1 ether}();
+
+        // Try to withdraw while paused (should fail)
+        vm.prank(user1);
+        vm.expectRevert("Rebalancing ETH is paused");
+        minter.unstake(2 ether);
+
+
         assertEq(minter.depositEtherPaused(), true);
         
         vm.stopPrank();

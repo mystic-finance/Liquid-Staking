@@ -21,6 +21,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
     bytes32 constant REBALANCER_ROLE = keccak256("REBALANCER_ROLE");
     bytes32 constant CLAIMER_ROLE = keccak256("CLAIMER_ROLE");
     bytes32 constant HANDLER_ROLE = keccak256("HANDLER_ROLE");
+    bytes32 constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     uint256 public REDEMPTION_FEE; // 0.015%
     uint256 public INSTANT_REDEMPTION_FEE; // 0.5%
     uint256 public minStake;
@@ -245,7 +246,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
         uint fee = (totalAmount * REDEMPTION_FEE) / RATIO_PRECISION;
         request.amount = 0; request.timestamp = 0; request.deficit = 0;
 
-        if(totalWithdrawable > 0){
+        if(totalWithdrawable > 0 && totalAmount > totalInstantUnstaked){
             uint256 balanceBefore = address(this).balance;
             plumeStaking.withdraw();
             uint256 balanceAfter = address(this).balance;
@@ -614,6 +615,20 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
 
     function setStPlumeRewards(address _stPlumeRewards) external onlyByOwnGov {
         stPlumeRewards = IstPlumeRewards(_stPlumeRewards);
+    }
+
+     /// @notice Toggle allowing submites
+    function togglePauseSubmits() external onlyRole(PAUSER_ROLE) {
+        submitPaused = !submitPaused;
+
+        emit SubmitPaused(submitPaused);
+    }
+
+    /// @notice Toggle allowing depositing ETH to validators
+    function togglePauseDepositEther() external onlyRole(PAUSER_ROLE) {
+        depositEtherPaused = !depositEtherPaused;
+
+        emit DepositEtherPaused(depositEtherPaused);
     }
 
     receive() external payable override {
