@@ -12,17 +12,17 @@ contract Deploy is Script {
         console.log('Deployer:', deployer);
         vm.startBroadcast(deployer);
 
-        address[] memory recipients = new address[](4);
-        recipients[0] = 0x6FE60Cb3F305d0A03d6432F5fAab4eb78e0c1F31; //mev
-        recipients[1] = 0x5D845540D2e05422E8ef10CEDEd7C0bFB5Aac4A2; //mystic
-        recipients[2] = 0x7bfE10c32321B01b049a1F79757B1b3e1E973096; //plume
-        recipients[3] = 0xfa69E8D0591A6871E879f6a66fd5c05bCA2262b3; //cicada
+        address[] memory recipients = new address[](2);
+        recipients[0] = 0x0F44298b5C26259425f982F8Fe5eEE1C30FaBBe4; //mystic
+        recipients[1] = 0x6f8e88a87E6A58D3588B6f224459D56B674f7075; //edge
+        // recipients[2] = 0x7bfE10c32321B01b049a1F79757B1b3e1E973096; //plume
+        // recipients[3] = 0xfa69E8D0591A6871E879f6a66fd5c05bCA2262b3; //cicada
 
-        uint256[] memory shares = new uint256[](4);
-        shares[0] = 37500000;
-        shares[1] = 37500000;
-        shares[2] = 10000000;
-        shares[3] = 15000000;
+        uint256[] memory shares = new uint256[](2);
+        shares[0] = 33330000;
+        shares[1] = 66670000;
+        // shares[2] = 10000000;
+        // shares[3] = 15000000;
         
         PaymentSplitter paymentSplitter = new PaymentSplitter(recipients, shares);
 
