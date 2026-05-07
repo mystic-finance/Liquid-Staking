@@ -20,6 +20,7 @@ interface IstPlumeMinter {
     function currentWithheldETH() external view returns (uint256);
     function totalInstantUnstaked() external view returns (uint256);
     function totalUnstaked() external view returns (uint256);
+    function slashedAmount() external view returns (uint256);
 
     // External Functions
     function submitForValidator(uint16 validatorId) external payable;
