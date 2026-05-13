@@ -46,7 +46,7 @@ contract MyPlumeFeed is Initializable{
     function getTotalDeposits() public view returns (uint256) {
         PlumeStakingStorage.StakeInfo memory info = plumeStaking.stakeInfo(address(stPlumeMinter));
         uint256 plumeOwned = info.staked + info.cooled + info.parked;
-        return plumeOwned + stPlumeMinter.currentWithheldETH() - stPlumeMinter.totalUnstaked() - getMyPlumeRewards() - stPlumeMinter.slashedAmount();
+        return plumeOwned + stPlumeMinter.currentWithheldETH() - stPlumeMinter.totalUnstaked() - getMyPlumeRewards();
     }
     
     function getMyPlumePrice() public view returns (uint256) {

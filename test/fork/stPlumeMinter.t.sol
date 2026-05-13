@@ -3754,8 +3754,7 @@ contract StPlumeMinterForkTestMain is Test {
         assertEq(minter.slashedAmount(), 10 ether);
     }
 
-    function test_addFundsDirectly_coBumpsTIU() public {
-        // Set up a stuck request
+    function test_addFundsDirectly_doesNotBumpTIU() public {
         vm.prank(user1);
         minter.submit{value: 50 ether}();
 
@@ -3769,13 +3768,11 @@ contract StPlumeMinterForkTestMain is Test {
         uint256 cWEBefore = minter.currentWithheldETH();
         uint256 tIUBefore = minter.totalInstantUnstaked();
 
-        // Governance backfills via addFundsDirectly(0)
         vm.prank(owner);
         minter.addFundsDirectly{value: 10 ether}(0);
 
-        // Both currentWithheldETH AND totalInstantUnstaked increased by msg.value
         assertEq(minter.currentWithheldETH(), cWEBefore + 10 ether);
-        assertEq(minter.totalInstantUnstaked(), tIUBefore + 10 ether);
+        assertEq(minter.totalInstantUnstaked(), tIUBefore);
     }
 
     function test_addFundsDirectly_validatorPath_doesNotBumpTIU() public {
@@ -3854,6 +3851,169 @@ contract StPlumeMinterForkTestMain is Test {
         (uint256 reqAmount, uint256 deficit, , ) = minter.withdrawalRequests(user1, 0);
         assertEq(reqAmount + deficit, 10 ether);
     }
+
+    // ============================================================
+    // Audit remediation tests
+    // ============================================================
+
+    // L-04: hitting the queue threshold mid-unstake must NOT auto-fire
+    // _processBatchUnstake. nextBatchUnstakeTimePerValidator must stay put.
+    function test_L04_thresholdDoesNotTriggerBatchInline() public {
+        vm.prank(owner);
+        minter.setBatchUnstakeParams(60 ether, 21 days + 1 hours);
+
+        vm.prank(user1);
+        minter.submit{value: 200 ether}();
+
+        uint16 V1 = 1;
+        uint256 nextBefore = minter.nextBatchUnstakeTimePerValidator(V1);
+        require(block.timestamp < nextBefore, "test precondition: must be inside batch window");
+
+        // 50 > currentWithheldETH (2% of 200 = 4) → validator-routed
+        // slice (50) + queue (0) < threshold (60) → cap passes
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 200 ether);
+        minter.unstakeFromValidator(50 ether, V1);
+        vm.stopPrank();
+
+        // The fix: nextBatchUnstakeTime is NOT advanced (old code auto-fired when queue >= threshold).
+        assertEq(
+            minter.nextBatchUnstakeTimePerValidator(V1),
+            nextBefore,
+            "L-04: queue threshold must not trigger inline batch processing"
+        );
+        assertEq(minter.totalQueuedWithdrawalsPerValidator(V1), 50 ether);
+    }
+
+    // M-01: when a specific validator is chosen and the request would push the
+    // queue past withdrawalQueueThreshold during the batch window, _unstake
+    // must revert with "Oversubscribed".
+    function test_M01_specifiedValidator_revertsWhenOversubscribed() public {
+        vm.prank(owner);
+        minter.setBatchUnstakeParams(30 ether, 21 days + 1 hours);
+
+        vm.prank(user1);
+        minter.submit{value: 200 ether}();
+
+        uint16 V1 = 1;
+        require(block.timestamp < minter.nextBatchUnstakeTimePerValidator(V1), "must be in window");
+
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 200 ether);
+        // slice (50) + queue (0) >= threshold (30) → revert
+        vm.expectRevert("Oversubscribed");
+        minter.unstakeFromValidator(50 ether, V1);
+        vm.stopPrank();
+    }
+
+    // M-01 sister: a fresh validator (queue=0) accepts an under-threshold unstake.
+    function test_M01_specifiedValidator_acceptsUnderThreshold() public {
+        vm.prank(owner);
+        minter.setBatchUnstakeParams(100 ether, 21 days + 1 hours);
+
+        vm.prank(user1);
+        minter.submit{value: 200 ether}();
+
+        uint16 V1 = 1;
+        require(block.timestamp < minter.nextBatchUnstakeTimePerValidator(V1), "must be in window");
+
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 200 ether);
+        // slice (50) + queue (0) < threshold (100) → ok
+        minter.unstakeFromValidator(50 ether, V1);
+        vm.stopPrank();
+
+        assertEq(minter.totalQueuedWithdrawalsPerValidator(V1), 50 ether);
+    }
+
+    // M-01: loop case (no validator specified) must SKIP an over-capped validator
+    // and route the unstake onto another one, not revert.
+    function test_M01_loopCase_skipsOverCappedValidator() public {
+        vm.prank(owner);
+        minter.setBatchUnstakeParams(60 ether, 21 days + 1 hours);
+
+        uint16 V1 = 1;
+        uint16 V2 = 2;
+        // Seed BOTH V1 and V2 so the loop has an alternative when V1 is skipped.
+        vm.prank(user1);
+        minter.submitForValidator{value: 200 ether}(V1);
+        vm.prank(user1);
+        minter.submitForValidator{value: 200 ether}(V2);
+
+        // user1 fills V1 to 50 (cap is 60)
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 400 ether);
+        minter.unstakeFromValidator(50 ether, V1);
+        vm.stopPrank();
+
+        uint256 queueV1Snapshot = minter.totalQueuedWithdrawalsPerValidator(V1);
+        assertEq(queueV1Snapshot, 50 ether);
+
+        // user2 calls loop-mode unstake. V1 slice (50) + queue (50) = 100 >= 60 → skip V1.
+        // V2 slice (50) + queue (0) < 60 → accept.
+        vm.prank(user2);
+        minter.submitForValidator{value: 200 ether}(V2);
+
+        vm.startPrank(user2);
+        frxETHToken.approve(address(minter), 200 ether);
+        minter.unstake(50 ether);
+        vm.stopPrank();
+
+        // V1 queue unchanged — skipped, not appended.
+        assertEq(
+            minter.totalQueuedWithdrawalsPerValidator(V1),
+            queueV1Snapshot,
+            "M-01 loop: over-capped V1 must be skipped"
+        );
+        uint256 sumLater = minter.totalQueuedWithdrawalsPerValidator(V2)
+            + minter.totalQueuedWithdrawalsPerValidator(3)
+            + minter.totalQueuedWithdrawalsPerValidator(4)
+            + minter.totalQueuedWithdrawalsPerValidator(5);
+        assertGt(sumLater, 0, "M-01 loop: a later validator must have taken the unstake");
+    }
+
+    // L-01: unstakeGov no longer silently no-ops. With a too-large amount it
+    // must revert (Plume itself rejects the request).
+    function test_L01_unstakeGov_revertsOnExcessiveAmount() public {
+        vm.prank(user1);
+        minter.submit{value: 10 ether}();
+
+        vm.prank(owner);
+        vm.expectRevert();
+        minter.unstakeGov(1, 1_000_000 ether);
+    }
+
+    // L-01: happy path — unstakeGov passes through to Plume and resets bookkeeping.
+    function test_L01_unstakeGov_resetsBookkeepingOnSuccess() public {
+        vm.prank(user1);
+        minter.submit{value: 200 ether}();
+
+        uint16 V1 = 1;
+        uint256 stakedOnV1 = mockPlumeStaking.getUserValidatorStake(address(minter), V1);
+        assertGt(stakedOnV1, 0, "precondition: minter must have stake on V1");
+
+        vm.prank(owner);
+        minter.setBatchUnstakeParams(100 ether, 21 days + 1 hours);
+
+        // Seed a queue (amount > withheld → validator-routed)
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 200 ether);
+        minter.unstakeFromValidator(50 ether, V1);
+        vm.stopPrank();
+        assertEq(minter.totalQueuedWithdrawalsPerValidator(V1), 50 ether);
+
+        uint256 governanceUnstake = stakedOnV1 / 4;
+        vm.prank(owner);
+        minter.unstakeGov(V1, governanceUnstake);
+
+        assertEq(minter.totalQueuedWithdrawalsPerValidator(V1), 0, "queue must be cleared");
+        assertGt(
+            minter.nextBatchUnstakeTimePerValidator(V1),
+            block.timestamp,
+            "nextBatchUnstakeTime must be advanced"
+        );
+    }
+
 }
 
 

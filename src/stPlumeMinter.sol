@@ -129,7 +129,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
 
     function _unstakeFromValidator(uint256 amount, uint16 validatorId) internal returns (uint256 amountUnstaked) {
         _rebalance();
-        require(amount >= minStake, "not enough to unstake");
+        require(amount >= minStake, "Amount too low");
         amountUnstaked =  _unstake(amount, false, validatorId);
         return amountUnstaked;
     }
@@ -146,15 +146,12 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
 
     function unstakeGov(uint16 validatorId, uint256 amount) external nonReentrant onlyByOwnGov returns (uint256 amountRestaked) {
         _rebalance();
-        (bool active, ,uint256 stakedAmount,) = plumeStaking.getValidatorStats(uint16(validatorId));
         uint256 queued = totalQueuedWithdrawalsPerValidator[validatorId];
         uint256 total = amount + queued;
         
-        if (active && stakedAmount > 0 && stakedAmount >= total) {
-            amountRestaked = plumeStaking.unstake(uint16(validatorId), total);
-            totalQueuedWithdrawalsPerValidator[validatorId] = 0;
-            nextBatchUnstakeTimePerValidator[validatorId] = block.timestamp + batchUnstakeInterval;
-        }
+        amountRestaked = plumeStaking.unstake(uint16(validatorId), total);
+        totalQueuedWithdrawalsPerValidator[validatorId] = 0;
+        nextBatchUnstakeTimePerValidator[validatorId] = block.timestamp + batchUnstakeInterval;
     }
 
     function withdrawGov() external nonReentrant onlyByOwnGov returns (uint256 amountWithdrawn) {
@@ -175,7 +172,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
             _depositEther(msg.value, validatorId);
         }else{
             currentWithheldETH += msg.value;
-            totalInstantUnstaked += msg.value;
+            // totalInstantUnstaked += msg.value;
         }
         emit ETHSubmitted(address(this), address(this), msg.value, validatorId);
     }
@@ -339,7 +336,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
         while (index < numVals) {
             uint16 validatorId = uint16(validators[index].validatorId);
             (bool active,,,) = plumeStaking.getValidatorStats(validatorId);
-            if (active && (totalQueuedWithdrawalsPerValidator[validatorId] >= withdrawalQueueThreshold || block.timestamp >= nextBatchUnstakeTimePerValidator[validatorId])) {
+            if (active && block.timestamp >= nextBatchUnstakeTimePerValidator[validatorId]) {
                 _processBatchUnstake(validatorId);
             }
             index++;
@@ -466,17 +463,20 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
             if(_validatorId != 0){
                 (bool active, ,uint256 stakedAmount,) = plumeStaking.getValidatorStats(uint16(_validatorId));
                 uint256 validatorStakedAmount = plumeStaking.getUserValidatorStake(address(this), uint16(_validatorId));
-                uint256 remainingUnstaked = validatorStakedAmount - totalQueuedWithdrawalsPerValidator[_validatorId];
+                uint256 remainingUnstaked = validatorStakedAmount > totalQueuedWithdrawalsPerValidator[_validatorId] ? validatorStakedAmount - totalQueuedWithdrawalsPerValidator[_validatorId] : 0;
                 require(active && stakedAmount >= validatorStakedAmount && remainingUnstaked + currentWithheldETH - totalInstantUnstaked >= remainingToUnstake, "Validator cannot fulfill unstake");
-                
+
                 uint256 unstakeAmountFromValidator = remainingToUnstake > remainingUnstaked ? remainingUnstaked : remainingToUnstake;
+                if(block.timestamp < nextBatchUnstakeTimePerValidator[_validatorId]){
+                    require(unstakeAmountFromValidator + totalQueuedWithdrawalsPerValidator[_validatorId] < withdrawalQueueThreshold, "Oversubscribed");
+                }
+
+                if (block.timestamp >= nextBatchUnstakeTimePerValidator[_validatorId]) {
+                    _processBatchUnstake(_validatorId);
+                }
                 totalQueuedWithdrawalsPerValidator[_validatorId] += unstakeAmountFromValidator; //new
                 amountUnstaked += unstakeAmountFromValidator;
                 remainingToUnstake -= unstakeAmountFromValidator;
-                
-                if (totalQueuedWithdrawalsPerValidator[_validatorId] >= withdrawalQueueThreshold || block.timestamp >= nextBatchUnstakeTimePerValidator[_validatorId]) {
-                    _processBatchUnstake(_validatorId);
-                }
                 cooldownTimestamp = plumeStaking.getCooldownInterval() + nextBatchUnstakeTimePerValidator[_validatorId];
             }
 
@@ -487,18 +487,22 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
                 require(validatorId > 0, "Unknown Validator");
                 (bool active, ,uint256 stakedAmount,) = plumeStaking.getValidatorStats(uint16(validatorId));
                 uint256 validatorStakedAmount = plumeStaking.getUserValidatorStake(address(this), uint16(validatorId));
-                uint256 remainingUnstaked = validatorStakedAmount - totalQueuedWithdrawalsPerValidator[uint16(validatorId)];
+                uint256 remainingUnstaked = validatorStakedAmount > totalQueuedWithdrawalsPerValidator[uint16(validatorId)] ? validatorStakedAmount - totalQueuedWithdrawalsPerValidator[uint16(validatorId)] : 0;
                 
                 if (active && stakedAmount > 0 && validatorStakedAmount > 0 && validatorStakedAmount <= stakedAmount && remainingUnstaked > 0 ) {
                     // Calculate how much to unstake from this validator
                     uint256 unstakeAmountFromValidator = remainingToUnstake > remainingUnstaked ? remainingUnstaked : remainingToUnstake;
+                    if(block.timestamp < nextBatchUnstakeTimePerValidator[uint16(validatorId)] && unstakeAmountFromValidator + totalQueuedWithdrawalsPerValidator[uint16(validatorId)] >= withdrawalQueueThreshold){
+                       index++; // skip the entire block but needs to increment index otherwise infinite loop
+                       continue;
+                    }
+
+                    if (block.timestamp >= nextBatchUnstakeTimePerValidator[uint16(validatorId)]) {
+                        _processBatchUnstake(uint16(validatorId));
+                    }
                     totalQueuedWithdrawalsPerValidator[uint16(validatorId)] += unstakeAmountFromValidator; //new
                     amountUnstaked += unstakeAmountFromValidator;
                     remainingToUnstake -= unstakeAmountFromValidator;
-
-                    if (totalQueuedWithdrawalsPerValidator[uint16(validatorId)] >= withdrawalQueueThreshold || block.timestamp >= nextBatchUnstakeTimePerValidator[uint16(validatorId)]) {
-                        _processBatchUnstake(uint16(validatorId));
-                    }
 
                     uint256 endTime = plumeStaking.getCooldownInterval() + nextBatchUnstakeTimePerValidator[uint16(validatorId)];
                     if(endTime > cooldownTimestamp){ // use the max timestamp as the cooldown timestamp
@@ -516,7 +520,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
                 totalInstantUnstaked += deficit;
                 require(totalInstantUnstaked <= currentWithheldETH, "Deficit too high");
             }
-            require(remainingToUnstake == 0, "Not enough funds");
+            require(remainingToUnstake == 0, "No funds left");
         }
 
         require(amountUnstaked > 0, "Zero unstaked");
@@ -565,7 +569,7 @@ contract stPlumeMinter is AccessControlUpgradeable, frxETHMinter {
     function _submit(address recipient, uint16 validatorId) internal returns (uint256 amount) {
          _rebalance();
         amount = super._submit(recipient);
-        require(amount >= minStake, "not enough to stake");
+        require(amount >= minStake, "Amount too low");
         _depositEther(amount, validatorId);
         return amount;
     }
