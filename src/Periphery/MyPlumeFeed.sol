@@ -44,10 +44,15 @@ contract MyPlumeFeed is Initializable{
     }
 
     function getTotalDeposits() public view returns (uint256) {
-        return getPlumeStakedAmount() + stPlumeMinter.currentWithheldETH() - stPlumeMinter.totalInstantUnstaked() - getMyPlumeRewards();
+        PlumeStakingStorage.StakeInfo memory info = plumeStaking.stakeInfo(address(stPlumeMinter));
+        uint256 plumeOwned = info.staked + info.cooled + info.parked;
+        return plumeOwned + stPlumeMinter.currentWithheldETH() - stPlumeMinter.totalUnstaked() - getMyPlumeRewards();
     }
     
     function getMyPlumePrice() public view returns (uint256) {
+        if (myPlume.totalSupply() == 0) {
+            return 0;
+        }
         return getTotalDeposits() * 1e18 / myPlume.totalSupply();
     }
     

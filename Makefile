@@ -8,7 +8,7 @@ test-run-upgrade:; forge test --mc UpgradeTests --fork-url https://rpc.plume.org
 test-run-wrapped:; forge test --mc sfrxETHForkTest --fork-url https://rpc.plume.org -vvv
 test-run-operator:; forge test --mc OperatorRegistryForkTest --fork-url https://rpc.plume.org -vvv
 test-run-myPlumeFeed:; forge test --mc MyPlumeFeedForkTest --fork-url https://rpc.plume.org -vvvvv
-test-run-all:; make test-run-upgrade && make test-run-operator &&  make test-run-staked
+test-run-all:; make test-run-upgrade && make test-run-operator &&  make test-run-staked && make test-run-myPlumeFeed
 
 test-run-specific:; forge test --mc StPlumeMinterForkTestMain --fork-url https://rpc.plume.org --mt test_integration_flow4_1 -vvvvv
 

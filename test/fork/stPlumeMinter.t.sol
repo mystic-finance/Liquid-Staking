@@ -583,12 +583,12 @@ contract StPlumeMinterForkTestMain is Test {
         minter.togglePauseDepositEther();
 
         vm.prank(user1);
-        vm.expectRevert("Depositing ETH is paused");
+        vm.expectRevert("Rebalance paused");
         minter.submit{value: 1 ether}();
 
         // Try to withdraw while paused (should fail)
         vm.prank(user1);
-        vm.expectRevert("Rebalancing ETH is paused");
+        vm.expectRevert("Rebalance paused");
         minter.unstake(2 ether);
 
 
@@ -2682,7 +2682,7 @@ contract StPlumeMinterForkTestMain is Test {
         // Unstake
         vm.startPrank(user1);
         frxETHToken.approve(address(minter), 100 ether);
-        vm.expectRevert("Validator cannot fulfill the unstake request");
+        vm.expectRevert("Validator cannot fulfill unstake");
         minter.unstakeFromValidator(100 ether,2);
         _updateBatchUnstake();
         _updateBatchUnstake();
@@ -3135,7 +3135,7 @@ contract StPlumeMinterForkTestMain is Test {
         _updateBatchUnstake();
         vm.startPrank(user1);
         frxETHToken.approve(address(minter), 100 ether);
-        vm.expectRevert("Validator cannot fulfill the unstake request");
+        vm.expectRevert("Validator cannot fulfill unstake");
         minter.unstakeFromValidator(80 ether, 2);
         _updateBatchUnstake();
     }
@@ -3506,6 +3506,514 @@ contract StPlumeMinterForkTestMain is Test {
         uint256 balanceAfter = user1.balance;
         vm.stopPrank();
     }
+
+    // ============================================================
+    // unstakeGov tests
+    // ============================================================
+
+    function test_unstakeGov_authOnly() public {
+        // Non-owner cannot call unstakeGov
+        vm.prank(user1);
+        vm.expectRevert("Not owner or timelock");
+        minter.unstakeGov(1, 1 ether);
+    }
+
+    function test_unstakeGov_emptyQueue() public {
+        // Stake into V1 first
+        vm.prank(user1);
+        minter.submit{value: 50 ether}();
+
+        // Queue is 0 — gov unstake should just take its own amount
+        assertEq(minter.totalQueuedWithdrawalsPerValidator(1), 0);
+
+        uint256 stakedBefore = mockPlumeStaking.getUserValidatorStake(address(minter), 1);
+
+        vm.prank(owner);
+        minter.unstakeGov(1, 5 ether);
+
+        // Queue stays at 0, V1's stake reduced
+        assertEq(minter.totalQueuedWithdrawalsPerValidator(1), 0);
+        uint256 stakedAfter = mockPlumeStaking.getUserValidatorStake(address(minter), 1);
+        assertLt(stakedAfter, stakedBefore);
+    }
+
+    function test_unstakeGov_mergesUserQueue() public {
+        // Stake and queue users on V1
+        vm.prank(user1);
+        minter.submit{value: 50 ether}();
+
+        // Wait for previous batch to settle so user1's unstake stays queued
+        _updateBatchUnstake();
+
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 50 ether);
+        minter.unstakeFromValidator(10 ether, 1);
+        vm.stopPrank();
+
+        uint256 queuedBefore = minter.totalQueuedWithdrawalsPerValidator(1);
+        assertGt(queuedBefore, 0, "queue should have user amount");
+
+        // Gov calls unstakeGov — should merge queue and process atomically
+        vm.prank(owner);
+        minter.unstakeGov(1, 5 ether);
+
+        // Queue is reset
+        assertEq(minter.totalQueuedWithdrawalsPerValidator(1), 0);
+
+        // Timer is pushed forward by batchUnstakeInterval
+        assertEq(
+            minter.nextBatchUnstakeTimePerValidator(1),
+            block.timestamp + minter.batchUnstakeInterval()
+        );
+    }
+
+    function test_unstakeGov_zeroAmountFlushesQueue() public {
+        // Stake and queue users on V1
+        vm.prank(user1);
+        minter.submit{value: 50 ether}();
+
+        _updateBatchUnstake();
+
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 50 ether);
+        minter.unstakeFromValidator(10 ether, 1);
+        vm.stopPrank();
+
+        uint256 queuedBefore = minter.totalQueuedWithdrawalsPerValidator(1);
+        assertGt(queuedBefore, 0);
+
+        // amount=0 should still flush the queue
+        vm.prank(owner);
+        minter.unstakeGov(1, 0);
+
+        assertEq(minter.totalQueuedWithdrawalsPerValidator(1), 0);
+    }
+
+    function test_unstakeGov_protocolUnderstaked_revertsAtPlume() public {
+        // The if-check uses validator-global staked amount, not protocol's portion.
+        // When `total` exceeds protocol's stake on V (but is below the validator's
+        // global total), the if-check passes and plumeStaking.unstake reverts.
+        vm.prank(user1);
+        minter.submit{value: 5 ether}();
+
+        // Ask for far more than the protocol has staked on V1.
+        // This passes the validator-global staked >= total check but fails
+        // inside plumeStaking.unstake.
+        uint256 huge = 10_000_000 ether;
+        vm.prank(owner);
+        vm.expectRevert();
+        minter.unstakeGov(1, huge);
+    }
+
+    function test_unstakeGov_thenWithdrawGov() public {
+        // Standard rebalancing flow: unstakeGov → wait → withdrawGov
+        vm.prank(user1);
+        minter.submit{value: 30 ether}();
+
+        _updateBatchUnstake();
+        vm.stopPrank();   // _updateBatchUnstake leaves a prank active
+
+        vm.prank(owner);
+        minter.unstakeGov(1, 10 ether);
+
+        // Wait for cooldown to mature on plumeStaking
+        vm.warp(block.timestamp + mockPlumeStaking.getCooldownInterval() + 1 hours);
+
+        uint256 cWEBefore = minter.currentWithheldETH();
+        vm.prank(owner);
+        uint256 pulled = minter.withdrawGov();
+        assertGt(pulled, 0, "withdrawGov should pull matured funds");
+        assertGt(minter.currentWithheldETH(), cWEBefore);
+    }
+
+    // ============================================================
+    // Slash event / haircut tests
+    // ============================================================
+
+    function test_setSlashedAmount_authOnly() public {
+        vm.prank(user1);
+        vm.expectRevert("Not owner or timelock");
+        minter.setSlashedAmount(1 ether);
+    }
+
+    function test_setSlashedAmount_setsAndReads() public {
+        assertEq(minter.slashedAmount(), 0);
+        vm.prank(owner);
+        minter.setSlashedAmount(7 ether);
+        assertEq(minter.slashedAmount(), 7 ether);
+
+        // Can be reduced
+        vm.prank(owner);
+        minter.setSlashedAmount(2 ether);
+        assertEq(minter.slashedAmount(), 2 ether);
+
+        // Can be cleared
+        vm.prank(owner);
+        minter.setSlashedAmount(0);
+        assertEq(minter.slashedAmount(), 0);
+    }
+
+    function test_unstake_noHaircut_whenSlashedAmountZero() public {
+        vm.prank(user1);
+        minter.submit{value: 10 ether}();
+
+        assertEq(minter.slashedAmount(), 0);
+
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 5 ether);
+        uint256 amountUnstaked = minter.unstake(5 ether);
+        vm.stopPrank();
+
+        // No haircut applied — request equals nominal
+        (uint256 reqAmount, uint256 deficit, , ) = minter.withdrawalRequests(user1, 0);
+        assertEq(reqAmount + deficit, 5 ether);
+        assertEq(amountUnstaked, 5 ether);
+    }
+
+    function test_unstake_appliesHaircutWhenSlashed() public {
+        // 100 ether deposited → 100 myPLUME minted
+        vm.prank(user1);
+        minter.submit{value: 100 ether}();
+
+        // 10% slash recorded
+        vm.prank(owner);
+        minter.setSlashedAmount(10 ether);
+
+        uint256 supplyBefore = frxETHToken.totalSupply();
+        uint256 slashedBefore = minter.slashedAmount();
+
+        // User unstakes 10 myPLUME
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 10 ether);
+        minter.unstake(10 ether);
+        vm.stopPrank();
+
+        // Burned full 10 myPLUME
+        assertEq(frxETHToken.balanceOf(user1), 90 ether);
+
+        // Request was hairut'd
+        (uint256 reqAmount, uint256 deficit, , ) = minter.withdrawalRequests(user1, 0);
+        uint256 totalRequested = reqAmount + deficit;
+        // expected: 10 * (100 - 10) / 100 = 9 ether
+        assertApproxEqAbs(totalRequested, 9 ether, 1e15);
+
+        // slashedAmount decremented by user's share of the loss (1 ether)
+        // expected: 10 - 1 = 9 ether
+        assertApproxEqAbs(minter.slashedAmount(), slashedBefore - 1 ether, 1e15);
+    }
+
+    function test_unstake_haircut_navPreservedAcrossRedeemers() public {
+        // Two users each with 50 myPLUME, slash of 10
+        vm.prank(user1);
+        minter.submit{value: 50 ether}();
+        vm.prank(user2);
+        minter.submit{value: 50 ether}();
+
+        vm.prank(owner);
+        minter.setSlashedAmount(10 ether);
+
+        // user1 unstakes first
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 10 ether);
+        minter.unstake(10 ether);
+        vm.stopPrank();
+        (uint256 r1Amount, uint256 r1Deficit, , ) = minter.withdrawalRequests(user1, 0);
+        uint256 user1Got = r1Amount + r1Deficit;
+
+        // user2 unstakes second
+        vm.startPrank(user2);
+        frxETHToken.approve(address(minter), 10 ether);
+        minter.unstake(10 ether);
+        vm.stopPrank();
+        (uint256 r2Amount, uint256 r2Deficit, , ) = minter.withdrawalRequests(user2, 0);
+        uint256 user2Got = r2Amount + r2Deficit;
+
+        // NAV preserved: both users get the same haircut ratio
+        assertApproxEqAbs(user1Got, user2Got, 1e15, "NAV should be preserved across redeemers");
+    }
+
+    function test_unstake_haircut_skippedForRewardsPath() public {
+        // Build up some yield first
+        vm.prank(user1);
+        minter.submit{value: 100 ether}();
+
+        // Trigger reward distribution (mocked / fork-specific)
+        // NOTE: the rewards path via unstakeRewards is gated by stPlumeRewards.getUserRewards
+        // which depends on cycle state — this test verifies the gating only.
+        vm.prank(owner);
+        minter.setSlashedAmount(10 ether);
+
+        // unstakeRewards should be unaffected by slashedAmount
+        // The internal flow: _unstake(yield, true, 0) — the `rewards=true` flag
+        // skips the haircut block entirely.
+        // Without rewards accrued, this just no-ops, but it shouldn't apply haircut math.
+        vm.prank(user1);
+        uint256 yield = minter.unstakeRewards();
+        // No assertion on yield (depends on fork state); just ensure no revert
+        // and slashedAmount unchanged.
+        assertEq(minter.slashedAmount(), 10 ether);
+    }
+
+    function test_addFundsDirectly_doesNotBumpTIU() public {
+        vm.prank(user1);
+        minter.submit{value: 50 ether}();
+
+        _updateBatchUnstake();
+
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 50 ether);
+        minter.unstakeFromValidator(10 ether, 1);
+        vm.stopPrank();
+
+        uint256 cWEBefore = minter.currentWithheldETH();
+        uint256 tIUBefore = minter.totalInstantUnstaked();
+
+        vm.prank(owner);
+        minter.addFundsDirectly{value: 10 ether}(0);
+
+        assertEq(minter.currentWithheldETH(), cWEBefore + 10 ether);
+        assertEq(minter.totalInstantUnstaked(), tIUBefore);
+    }
+
+    function test_addFundsDirectly_validatorPath_doesNotBumpTIU() public {
+        // Validator-targeted path stakes funds, no tIU bump
+        vm.prank(user1);
+        minter.submit{value: 5 ether}();
+
+        uint256 tIUBefore = minter.totalInstantUnstaked();
+
+        vm.prank(owner);
+        minter.addFundsDirectly{value: 1 ether}(1);
+
+        // tIU unchanged because validatorId > 0 went through _depositEther
+        assertEq(minter.totalInstantUnstaked(), tIUBefore);
+    }
+
+    function test_slashRecovery_endToEnd_haircutSettlesStuckRequest() public {
+        // Full simulated slash recovery without insurance (haircut path).
+        // 1) user stakes
+        // 2) governance records slash via setSlashedAmount
+        // 3) user unstakes (queues against V1) — gets haircut at unstake time
+        // 4) batch fires; user withdraws — should receive haircut amount
+
+        vm.prank(user1);
+        minter.submit{value: 100 ether}();
+
+        _updateBatchUnstake();
+        vm.stopPrank();   // _updateBatchUnstake leaves a prank active
+
+        // Governance records 10% slash
+        vm.prank(owner);
+        minter.setSlashedAmount(10 ether);
+
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 100 ether);
+        minter.unstakeFromValidator(20 ether, 1);
+        vm.stopPrank();
+
+        // Process batch and warp to maturity
+        _updateBatchUnstake();
+        vm.stopPrank();
+        vm.warp(block.timestamp + mockPlumeStaking.getCooldownInterval() + 4 hours);
+
+        (uint256 reqAmount, uint256 deficit, uint256 requestTimestamp, ) = minter.withdrawalRequests(user1, 0);
+        vm.warp(requestTimestamp + 1);
+
+        uint256 balBefore = user1.balance;
+        vm.prank(user1);
+        minter.withdraw(user1, 0);
+        uint256 received = user1.balance - balBefore;
+
+        // User received less than nominal due to haircut
+        assertLt(received, 20 ether, "should receive less than nominal due to haircut");
+        // Haircut amount stored in request reflected the cut at unstake time
+        assertLt(reqAmount + deficit, 20 ether);
+    }
+
+    function test_slashRecovery_clearedHaircutRestoresFullPayout() public {
+        // After insurance backfill restores backing, governance clears slashedAmount
+        // and subsequent unstakes get no haircut.
+        vm.prank(user1);
+        minter.submit{value: 100 ether}();
+
+        // Set slash, then immediately clear (simulating full insurance backfill)
+        vm.prank(owner);
+        minter.setSlashedAmount(10 ether);
+        vm.prank(owner);
+        minter.setSlashedAmount(0);
+
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 10 ether);
+        minter.unstake(10 ether);
+        vm.stopPrank();
+
+        // No haircut: request should reflect full nominal
+        (uint256 reqAmount, uint256 deficit, , ) = minter.withdrawalRequests(user1, 0);
+        assertEq(reqAmount + deficit, 10 ether);
+    }
+
+    // ============================================================
+    // Audit remediation tests
+    // ============================================================
+
+    // L-04: hitting the queue threshold mid-unstake must NOT auto-fire
+    // _processBatchUnstake. nextBatchUnstakeTimePerValidator must stay put.
+    function test_L04_thresholdDoesNotTriggerBatchInline() public {
+        vm.prank(owner);
+        minter.setBatchUnstakeParams(60 ether, 21 days + 1 hours);
+
+        vm.prank(user1);
+        minter.submit{value: 200 ether}();
+
+        uint16 V1 = 1;
+        uint256 nextBefore = minter.nextBatchUnstakeTimePerValidator(V1);
+        require(block.timestamp < nextBefore, "test precondition: must be inside batch window");
+
+        // 50 > currentWithheldETH (2% of 200 = 4) → validator-routed
+        // slice (50) + queue (0) < threshold (60) → cap passes
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 200 ether);
+        minter.unstakeFromValidator(50 ether, V1);
+        vm.stopPrank();
+
+        // The fix: nextBatchUnstakeTime is NOT advanced (old code auto-fired when queue >= threshold).
+        assertEq(
+            minter.nextBatchUnstakeTimePerValidator(V1),
+            nextBefore,
+            "L-04: queue threshold must not trigger inline batch processing"
+        );
+        assertEq(minter.totalQueuedWithdrawalsPerValidator(V1), 50 ether);
+    }
+
+    // M-01: when a specific validator is chosen and the request would push the
+    // queue past withdrawalQueueThreshold during the batch window, _unstake
+    // must revert with "Oversubscribed".
+    function test_M01_specifiedValidator_revertsWhenOversubscribed() public {
+        vm.prank(owner);
+        minter.setBatchUnstakeParams(30 ether, 21 days + 1 hours);
+
+        vm.prank(user1);
+        minter.submit{value: 200 ether}();
+
+        uint16 V1 = 1;
+        require(block.timestamp < minter.nextBatchUnstakeTimePerValidator(V1), "must be in window");
+
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 200 ether);
+        // slice (50) + queue (0) >= threshold (30) → revert
+        vm.expectRevert("Oversubscribed");
+        minter.unstakeFromValidator(50 ether, V1);
+        vm.stopPrank();
+    }
+
+    // M-01 sister: a fresh validator (queue=0) accepts an under-threshold unstake.
+    function test_M01_specifiedValidator_acceptsUnderThreshold() public {
+        vm.prank(owner);
+        minter.setBatchUnstakeParams(100 ether, 21 days + 1 hours);
+
+        vm.prank(user1);
+        minter.submit{value: 200 ether}();
+
+        uint16 V1 = 1;
+        require(block.timestamp < minter.nextBatchUnstakeTimePerValidator(V1), "must be in window");
+
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 200 ether);
+        // slice (50) + queue (0) < threshold (100) → ok
+        minter.unstakeFromValidator(50 ether, V1);
+        vm.stopPrank();
+
+        assertEq(minter.totalQueuedWithdrawalsPerValidator(V1), 50 ether);
+    }
+
+    // M-01: loop case (no validator specified) must SKIP an over-capped validator
+    // and route the unstake onto another one, not revert.
+    function test_M01_loopCase_skipsOverCappedValidator() public {
+        vm.prank(owner);
+        minter.setBatchUnstakeParams(60 ether, 21 days + 1 hours);
+
+        uint16 V1 = 1;
+        uint16 V2 = 2;
+        // Seed BOTH V1 and V2 so the loop has an alternative when V1 is skipped.
+        vm.prank(user1);
+        minter.submitForValidator{value: 200 ether}(V1);
+        vm.prank(user1);
+        minter.submitForValidator{value: 200 ether}(V2);
+
+        // user1 fills V1 to 50 (cap is 60)
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 400 ether);
+        minter.unstakeFromValidator(50 ether, V1);
+        vm.stopPrank();
+
+        uint256 queueV1Snapshot = minter.totalQueuedWithdrawalsPerValidator(V1);
+        assertEq(queueV1Snapshot, 50 ether);
+
+        // user2 calls loop-mode unstake. V1 slice (50) + queue (50) = 100 >= 60 → skip V1.
+        // V2 slice (50) + queue (0) < 60 → accept.
+        vm.prank(user2);
+        minter.submitForValidator{value: 200 ether}(V2);
+
+        vm.startPrank(user2);
+        frxETHToken.approve(address(minter), 200 ether);
+        minter.unstake(50 ether);
+        vm.stopPrank();
+
+        // V1 queue unchanged — skipped, not appended.
+        assertEq(
+            minter.totalQueuedWithdrawalsPerValidator(V1),
+            queueV1Snapshot,
+            "M-01 loop: over-capped V1 must be skipped"
+        );
+        uint256 sumLater = minter.totalQueuedWithdrawalsPerValidator(V2)
+            + minter.totalQueuedWithdrawalsPerValidator(3)
+            + minter.totalQueuedWithdrawalsPerValidator(4)
+            + minter.totalQueuedWithdrawalsPerValidator(5);
+        assertGt(sumLater, 0, "M-01 loop: a later validator must have taken the unstake");
+    }
+
+    // L-01: unstakeGov no longer silently no-ops. With a too-large amount it
+    // must revert (Plume itself rejects the request).
+    function test_L01_unstakeGov_revertsOnExcessiveAmount() public {
+        vm.prank(user1);
+        minter.submit{value: 10 ether}();
+
+        vm.prank(owner);
+        vm.expectRevert();
+        minter.unstakeGov(1, 1_000_000 ether);
+    }
+
+    // L-01: happy path — unstakeGov passes through to Plume and resets bookkeeping.
+    function test_L01_unstakeGov_resetsBookkeepingOnSuccess() public {
+        vm.prank(user1);
+        minter.submit{value: 200 ether}();
+
+        uint16 V1 = 1;
+        uint256 stakedOnV1 = mockPlumeStaking.getUserValidatorStake(address(minter), V1);
+        assertGt(stakedOnV1, 0, "precondition: minter must have stake on V1");
+
+        vm.prank(owner);
+        minter.setBatchUnstakeParams(100 ether, 21 days + 1 hours);
+
+        // Seed a queue (amount > withheld → validator-routed)
+        vm.startPrank(user1);
+        frxETHToken.approve(address(minter), 200 ether);
+        minter.unstakeFromValidator(50 ether, V1);
+        vm.stopPrank();
+        assertEq(minter.totalQueuedWithdrawalsPerValidator(V1), 50 ether);
+
+        uint256 governanceUnstake = stakedOnV1 / 4;
+        vm.prank(owner);
+        minter.unstakeGov(V1, governanceUnstake);
+
+        assertEq(minter.totalQueuedWithdrawalsPerValidator(V1), 0, "queue must be cleared");
+        assertGt(
+            minter.nextBatchUnstakeTimePerValidator(V1),
+            block.timestamp,
+            "nextBatchUnstakeTime must be advanced"
+        );
+    }
+
 }
 
 

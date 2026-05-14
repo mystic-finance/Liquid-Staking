@@ -254,6 +254,7 @@ contract UpgradeTests is Test {
         uint currentWithheldETH = minter.currentWithheldETH();
         uint withholdRatio = minter.withholdRatio();
         uint redemptionFee = minter.REDEMPTION_FEE();
+        address nativeToken = minter.nativeToken();
 
         // Perform upgrade
         vm.startPrank(owner);
@@ -269,6 +270,7 @@ contract UpgradeTests is Test {
         assertEq(minter.numValidators(), validators);
         assertEq(minter.currentWithheldETH(), currentWithheldETH);
         assertEq(minter.depositEtherPaused(), true);
+        assertEq(minter.nativeToken(), nativeToken);
 
         vm.prank(owner);
         minter.grantRole(keccak256("PAUSER_ROLE"), owner);
