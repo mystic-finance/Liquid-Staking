@@ -182,3 +182,150 @@ No checking for valid validator pubkeys, signatures, etc are done here. They are
 - Not a fork of a popular project
 - Does not use rollups
 - Single-chain only
+
+
+
+forge install https://github.com/transmissions11/solmate@62e0943c013a66b2720255e2651450928f4eed7a
+forge install https://github.com/OpenZeppelin/openzeppelin-contracts@8d908fe2c20503b05f888dd9f702e3fa6fa65840
+forge install https://github.com/foundry-rs/forge-std
+forge install https://github.com/corddry/ERC4626@6cf2bee5d784169acb02cc6ac0489ca197a4f149
+
+
+REWARD Mechanism:
+
+Core Components of the Reward System
+
+1. Reward Collection and Fee Structure
+The reward system begins with collecting yields from staking ETH with validators through the PlumeStaking protocol:
+
+- Yield Fee: The contract takes a configurable fee (default 10% via YIELD_FEE = 100000)
+- Redemption Fees: Two types of fees are charged when users withdraw:
+    - Standard redemption fee: 0.015% (REDEMPTION_FEE = 150)
+    - Instant redemption fee: 0.5% (INSTANT_REDEMPTION_FEE = 5000)
+
+2. Reward Accumulation Mechanism
+Rewards are collected through several methods:
+
+- claim() - Claims rewards from a specific validator
+- claimAll() - Claims rewards from all validators
+- loadRewards() - Allows direct ETH deposits as rewards
+- _rebalance() - Internal function that claims rewards and loads them
+When rewards are received, they're processed through _loadRewards():
+
+```solidity
+function _loadRewards(uint256 amount) internal {
+    if(amount > 0){
+        uint256 yieldAmount = amount * YIELD_FEE / RATIO_PRECISION;
+        yieldEth += amount - yieldAmount;
+        withHoldEth += yieldAmount;
+        _depositEther(amount - yieldAmount, 0);
+        if (block.timestamp >= rewardsCycleEnd) { syncRewards(); }
+    }
+}
+```
+
+3. Cycle-Based Reward Distribution
+The system uses a time-based cycle mechanism for distributing rewards:
+- Reward Cycles: Rewards are distributed over cycles (default 7 days via rewardsCycleLength)
+- Cycle Tracking: Each cycle's rewards and total supply are recorded in the cycleRewards array
+- Gradual Unlocking: Rewards are linearly unlocked over the cycle period
+
+The syncRewards() function manages cycle transitions:
+
+```solidity
+function syncRewards() public virtual {
+    uint256 timestamp = block.timestamp;
+    require(timestamp >= rewardsCycleEnd, "Not in rewards cycle");
+    require(yieldEth >= lastRewardAmount, "Negative rewards");
+
+    uint256 nextRewards = yieldEth - lastRewardAmount;
+    rewardsEth += nextRewards;
+    cycleRewards.push(CycleRewards({
+        rewards: nextRewards,
+        totalSupply: frxETHToken.totalSupply(),
+        cycleEnd: rewardsCycleEnd
+    }));
+    
+    // Set up the next cycle
+    uint256 end = ((timestamp + rewardsCycleLength) / rewardsCycleLength) * rewardsCycleLength;
+    if (end - timestamp < rewardsCycleLength / 20) {
+        end += rewardsCycleLength;
+    }
+
+    lastRewardAmount = uint192(nextRewards);
+    lastSync = uint32(timestamp);
+    rewardsCycleEnd = uint32(end);
+}
+```
+
+4. User Reward Tracking
+The contract meticulously tracks each user's rewards:
+
+- Per-User Tracking: userRewards mapping tracks each user's accumulated rewards
+- Reward Accrual: When users interact with the contract (deposit/withdraw), their rewards are accrued
+- Cycle Tracking: The contract tracks which cycles a user has claimed rewards from
+
+5. Reward Calculation
+The getYield() function calculates the total available yield:
+
+```solidity
+function getYield() public view returns (uint256) {
+    if (block.timestamp >= rewardsCycleEnd) {
+        return rewardsEth + lastRewardAmount;
+    }
+    uint256 unlockedRewards = (lastRewardAmount * (block.timestamp - lastSync)) / (rewardsCycleEnd - lastSync);
+    return rewardsEth + unlockedRewards;
+}
+```
+For individual users, rewards are calculated based on:
+- Their token balance
+- The cycles they've participated in
+- The current unlocked rewards
+
+The normalizedAmount() function returns a user's balance plus accrued rewards:
+
+```solidity
+function normalizedAmount(address user, uint256 amount) public view returns (uint256) {
+    return amount + userRewards[user].rewardsAccrued + _getCurrentUserYield(user, amount);
+}
+```
+
+6. Reward Claiming
+Users claim rewards through unstakeRewards():
+
+```solidity
+function unstakeRewards() external nonReentrant returns (uint256 yield) {
+    _rebalance();
+    yield = getUserRewards(msg.sender);
+    if(yield == 0){return 0;}
+    _unstake(yield, true, 0);
+    userRewards[msg.sender].rewardsAccrued = 0;
+    userRewards[msg.sender].rewardsBefore = getYield();
+    userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
+    require(getUserRewards(msg.sender) == 0, "Rewards should be reset after unstaking");
+    return yield;
+}
+```
+
+7. Reward Flow Summary
+- Reward Collection: ETH rewards are collected from validators via PlumeStaking
+- Fee Extraction: A portion of rewards (10% by default) is taken as protocol fee
+- Cycle Management: Remaining rewards are added to the current cycle
+- Gradual Distribution: Rewards are linearly unlocked over the cycle period
+- User Accounting: When users interact with the contract, their rewards are accrued
+- Reward Claiming: Users can claim rewards by calling unstakeRewards()
+
+The system ensures that rewards are fairly distributed to frxETH token holders based on their balance and participation in the protocol, while maintaining the protocol's sustainability through fee collection.
+
+
+
+## New Staking Scope
+You can find the codebase here: https://github.com/mystic-finance/Liquid-Staking/tree/staked-plume
+
+The key components include:
+- Core contracts (~500 LOC) in src/: stPlumeMinter.sol, frxETH.sol, frxEthMinter.sol, and OperatorRegistry.sol
+- Withdrawal and rewards management script in automation/
+- Tests in tests/fork/ with main test of stPlumeMinter.t.sol
+- Deployment script in script/ with DeployMinter.s.sol as the main deployment file
+
+## v2 start point a3034e601bdd88ad166139e72a6d167922077550
