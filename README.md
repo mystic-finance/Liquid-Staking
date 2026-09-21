@@ -246,7 +246,7 @@ flowchart TD
     C -- yes --> I["INSTANT request<br/>timestamp = now<br/>totalInstantUnstaked += amount"]
 
     C -- no --> D["for each validator<br/>(one, or registry order)"]
-    D --> E{"active &&<br/>minter stake − queued > 0 ?"}
+    D --> E{"active and<br/>minter stake − queued > 0 ?"}
     E -- no --> D
     E -- yes --> F{"batch window<br/>already open?"}
     F -- "no, and queued + take ≥<br/>withdrawalQueueThreshold" --> G["skip validator<br/>(targeted: revert 'Oversubscribed')"]
@@ -304,26 +304,29 @@ sequenceDiagram
 
     User->>M: withdraw(recipient, id)
     M->>M: _rebalance()
-    M->>M: require(now ≥ request.timestamp && request.amount > 0)
-    alt request.timestamp == request.createdTimestamp (instant)
-        M->>M: total = amount + deficit<br/>require total ≤ currentWithheldETH && total ≤ totalInstantUnstaked
-        M->>M: fee = total × 0.5%<br/>withHoldEth += fee<br/>currentWithheldETH −= total; totalInstantUnstaked −= total
-        M->>User: send total − fee
-    else queued (standard)
+    M->>M: require now ≥ request.timestamp and request.amount ≠ 0
+    alt Instant request (timestamp == createdTimestamp)
+        M->>M: total = amount + deficit
+        M->>M: require total ≤ currentWithheldETH and total ≤ totalInstantUnstaked
+        M->>M: fee = total × 0.5% → withHoldEth
+        M->>M: currentWithheldETH −= total, totalInstantUnstaked −= total
+        M->>User: transfer total − fee
+    else Queued request (standard)
         M->>P: amountWithdrawable()
+        P-->>M: withdrawable
         M->>M: require total ≤ withdrawable + totalInstantUnstaked
         M->>M: fee = total × 0.015%
-        opt withdrawable > 0 && total > totalInstantUnstaked
-            M->>P: withdraw() — pulls ALL cooled PLUME for the minter
-            P-->>M: PLUME (receive() ignores PlumeStaking sender)
-            M->>M: currentWithheldETH += withdrawn<br/>totalInstantUnstaked += withdrawn
+        opt withdrawable ≠ 0 and total exceeds totalInstantUnstaked
+            M->>P: withdraw() — pulls ALL cooled PLUME owned by the minter
+            P-->>M: PLUME (receive() ignores PlumeStaking as sender)
+            M->>M: currentWithheldETH += withdrawn, totalInstantUnstaked += withdrawn
         end
-        M->>M: if withdrawn < amount: shortfall must be < fee,<br/>absorb it from the fee
-        M->>M: require totalInstantUnstaked ≥ total ≤ currentWithheldETH
-        M->>M: currentWithheldETH −= total; totalInstantUnstaked −= total
-        M->>User: send total − fee
+        M->>M: if withdrawn falls short of amount, shortfall must be smaller than fee and is absorbed from the fee
+        M->>M: require totalInstantUnstaked ≥ total and totalInstantUnstaked ≤ currentWithheldETH
+        M->>M: currentWithheldETH −= total, totalInstantUnstaked −= total
+        M->>User: transfer total − fee
     end
-    M->>M: totalUnstaked −= total; clear request
+    M->>M: totalUnstaked −= total, clear request
 ```
 
 Notes:
