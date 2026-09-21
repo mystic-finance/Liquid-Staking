@@ -7,10 +7,10 @@ import "openzeppelin-contracts/contracts/token/ERC20/extensions/draft-ERC20Permi
 import "openzeppelin-contracts/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "../Utils/Owned.sol";
 
-/// @title Parent contract for frxETH.sol
+/// @title Parent contract for frxETH.sol, but also CrossChainCanonicalV2
 /** @notice Combines Openzeppelin's ERC20Permit and ERC20Burnable with Synthetix's Owned. 
     Also includes a list of authorized minters */
-/// @dev frxETH adheres to EIP-712/EIP-2612 and can use permits
+/// @dev ERC20PermitPermissionedMint adheres to EIP-712/EIP-2612 and can use permits
 contract ERC20PermitPermissionedMint is ERC20Permit, ERC20Burnable, Owned {
     // Core
     address public timelock_address;
@@ -51,7 +51,7 @@ contract ERC20PermitPermissionedMint is ERC20Permit, ERC20Burnable, Owned {
 
     // Used by minters when user redeems
     function minter_burn_from(address b_address, uint256 b_amount) public onlyMinters {
-        super.burnFrom(b_address, b_amount);
+        super._burn(b_address, b_amount);
         emit TokenMinterBurned(b_address, msg.sender, b_amount);
     }
 

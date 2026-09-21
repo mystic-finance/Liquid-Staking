@@ -24,7 +24,7 @@ pragma solidity ^0.8.0;
 
 import { frxETH } from "./frxETH.sol";
 import { IsfrxETH } from "./interfaces/IsfrxETH.sol";
-import "openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
+import {ReentrancyGuardUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/security/ReentrancyGuardUpgradeable.sol";
 import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { IDepositContract } from "./DepositContract.sol";
 import "./OperatorRegistry.sol";
@@ -34,20 +34,21 @@ import "./OperatorRegistry.sol";
 /** @dev Has permission to mint frxETH. 
     Once +32 ETH has accumulated, adds it to a validator, which then deposits it for ETH 2.0 staking (depositEther())
     Withhold ratio refers to what percentage of ETH this contract keeps whenever a user makes a deposit. 0% is kept initially */
-contract frxETHMinter is OperatorRegistry, ReentrancyGuard {    
-    uint256 public constant DEPOSIT_SIZE = 32 ether; // ETH 2.0 minimum deposit size
+contract frxETHMinter is OperatorRegistry, ReentrancyGuardUpgradeable {    
+    uint256 public constant DEPOSIT_SIZE = 32 ether; // ETH 2.0 minimum deposit size --deprecated, backwards compatibility
     uint256 public constant RATIO_PRECISION = 1e6; // 1,000,000 
 
     uint256 public withholdRatio; // What we keep and don't deposit whenever someone submit()'s ETH
     uint256 public currentWithheldETH; // Needed for internal tracking
-    mapping(bytes => bool) public activeValidators; // Tracks validators (via their pubkeys) that already have 32 ETH in them
+    mapping(bytes => bool) public activeValidators; // Tracks validators (via their pubkeys) that already have 32 ETH in them --deprecated, backwards compatibility
 
-    IDepositContract public immutable depositContract; // ETH 2.0 deposit contract
-    frxETH public immutable frxETHToken;
-    IsfrxETH public immutable sfrxETHToken;
+    IDepositContract public depositContract; // ETH 2.0 deposit contract
+    frxETH public frxETHToken;
+    IsfrxETH public sfrxETHToken;
 
     bool public submitPaused;
     bool public depositEtherPaused;
+    uint256[10] private __gap;
 
     constructor(
         address depositContractAddress, 
@@ -55,29 +56,15 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuard {
         address sfrxETHAddress, 
         address _owner, 
         address _timelock_address
-    ) OperatorRegistry(_owner, _timelock_address) {
+    ) OperatorRegistry(_owner, _timelock_address) {}
+
+    function _frxethminter_init(address depositContractAddress, address frxETHAddress, address sfrxETHAddress, address _owner, address _timelock_address) internal onlyInitializing {
+        _operator_init(_owner, _timelock_address);
+        __ReentrancyGuard_init();
         depositContract = IDepositContract(depositContractAddress);
         frxETHToken = frxETH(frxETHAddress);
-        sfrxETHToken = IsfrxETH(sfrxETHAddress);
-        withholdRatio = 0; // No ETH is withheld initially
+        withholdRatio = 20000; // No ETH is withheld initially (2%)
         currentWithheldETH = 0;
-    }
-
-    /// @notice Mint frxETH and deposit it to receive sfrxETH in one transaction
-    /** @dev Could try using EIP-712 / EIP-2612 here in the future if you replace this contract,
-        but you might run into msg.sender vs tx.origin issues with the ERC4626 */
-    function submitAndDeposit(address recipient) external payable returns (uint256 shares) {
-        // Give the frxETH to this contract after it is generated
-        _submit(address(this)); 
-
-        // Approve frxETH to sfrxETH for staking
-        frxETHToken.approve(address(sfrxETHToken), msg.value);
-
-        // Deposit the frxETH and give the generated sfrxETH to the final recipient
-        uint256 sfrxeth_recieved = sfrxETHToken.deposit(msg.value, recipient);
-        require(sfrxeth_recieved > 0, 'No sfrxETH was returned');
-
-        return sfrxeth_recieved;
     }
 
     /// @notice Mint frxETH to the recipient using sender's funds. Internal portion
@@ -134,31 +121,17 @@ contract frxETHMinter is OperatorRegistry, ReentrancyGuard {
         emit WithheldETHMoved(to, amount);
     }
 
-    /// @notice Toggle allowing submites
-    function togglePauseSubmits() external onlyByOwnGov {
-        submitPaused = !submitPaused;
-
-        emit SubmitPaused(submitPaused);
-    }
-
-    /// @notice Toggle allowing depositing ETH to validators
-    function togglePauseDepositEther() external onlyByOwnGov {
-        depositEtherPaused = !depositEtherPaused;
-
-        emit DepositEtherPaused(depositEtherPaused);
-    }
-
     /// @notice For emergencies if something gets stuck
-    function recoverEther(uint256 amount) external onlyByOwnGov {
-        (bool success,) = address(owner).call{ value: amount }("");
+    function recoverEther(uint256 amount, address payable to) external onlyByOwnGov {
+        (bool success,) = address(to).call{ value: amount }("");
         require(success, "Invalid transfer");
 
         emit EmergencyEtherRecovered(amount);
     }
 
     /// @notice For emergencies if someone accidentally sent some ERC20 tokens here
-    function recoverERC20(address tokenAddress, uint256 tokenAmount) external onlyByOwnGov {
-        require(IERC20(tokenAddress).transfer(owner, tokenAmount), "recoverERC20: Transfer failed");
+    function recoverERC20(address tokenAddress, uint256 tokenAmount, address to ) external onlyByOwnGov {
+        require(IERC20(tokenAddress).transfer(to, tokenAmount), "recoverERC20: Transfer failed");
 
         emit EmergencyERC20Recovered(tokenAddress, tokenAmount);
     }

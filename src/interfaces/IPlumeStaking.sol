@@ -11,6 +11,13 @@ import { PlumeStakingStorage } from "./PlumeStakingStorage.sol";
  */
 interface IPlumeStaking {
 
+    struct CooldownView {
+        // Define struct for the return type
+        uint16 validatorId;
+        uint256 amount;
+        uint256 cooldownEndTime;
+    }
+
     // Constants that will be shared across all implementations
     /// @notice Role for administrators of PlumeStaking
     function ADMIN_ROLE() external pure returns (bytes32);
@@ -31,9 +38,9 @@ interface IPlumeStaking {
     function PLUME() external pure returns (address);
 
     // Core functions all implementations must support
-    function initialize(
-        address owner
-    ) external;
+    // function initialize(
+    //     address owner
+    // ) external;
 
     // Staking functions
     /**
@@ -49,20 +56,19 @@ interface IPlumeStaking {
      * @param validatorId ID of the validator to stake to
      * @param amount Amount of tokens to restake (can be 0 to use all available cooling/parked funds)
      */
-    function restake(uint16 validatorId, uint256 amount) external returns (uint256);
+    function restake(uint16 validatorId, uint256 amount) external;
     function stakeOnBehalf(uint16 validatorId, address staker) external payable returns (uint256);
     function unstake(
         uint16 validatorId
     ) external returns (uint256 amount);
     function unstake(uint16 validatorId, uint256 amount) external returns (uint256 amountUnstaked);
-    function withdraw() external returns (uint256 amount);
+    function withdraw() external;
 
     // Reward functions
     function claim(
         address token
     ) external returns (uint256 amount);
     function claim(address token, uint16 validatorId) external returns (uint256 amount);
-    function claimAll() external returns (uint256 totalAmount);
 
     /**
      * @notice Update validator settings
@@ -125,6 +131,12 @@ interface IPlumeStaking {
     function cooldownEndDate() external view returns (uint256 timestamp);
 
     /**
+     * @notice Get the cooldown interval for the contract
+     * @return cooldownInterval Cooldown interval in seconds
+     */
+    function getCooldownInterval() external view returns (uint256 cooldownInterval);
+
+    /**
      * @notice Get the reward rate for a specific token
      * @param token Address of the token to check
      * @return rate Current reward rate for the token
@@ -177,4 +189,18 @@ interface IPlumeStaking {
     ) external view returns (bool active, uint256 commission, uint256 totalStaked, uint256 stakersCount);
 
     function getMinStakeAmount() external view returns (uint256);
+
+    function getTreasury() external view returns (address);
+
+    function claimAll() external returns (uint256[] memory);
+
+    function getRewardTokens() external view returns (address[] memory);
+
+    function isRewardToken(address token) external view returns (bool);
+
+    function getUserCooldowns(
+        address user
+    ) external view returns (CooldownView[] memory);
+
+    function getUserValidatorStake(address user, uint16 validatorId) external view returns (uint256) ;
 }

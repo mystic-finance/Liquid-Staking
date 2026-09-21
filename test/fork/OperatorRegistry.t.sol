@@ -2,7 +2,10 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
+import "../../src/stPlumeMinter.sol";
 import "../../src/OperatorRegistry.sol";
+import "openzeppelin-contracts/contracts/proxy/transparent/ProxyAdmin.sol";
+import "openzeppelin-contracts/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 contract OperatorRegistryForkTest is Test {
     OperatorRegistry registry;
@@ -12,7 +15,13 @@ contract OperatorRegistryForkTest is Test {
     function setUp() public {
         
         // Deploy registry
-        registry = new OperatorRegistry(owner, timelock);
+        // registry = new OperatorRegistry(owner, timelock);
+        ProxyAdmin admin = new ProxyAdmin();
+        stPlumeMinter impl = new stPlumeMinter();
+        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(address(impl), address(admin), bytes(""));
+        stPlumeMinter minter = stPlumeMinter(payable(address(proxy)));
+        minter.initialize( address(0), owner, timelock, address(0x30c791E4654EdAc575FA1700eD8633CB2FEDE871));
+        registry = OperatorRegistry(payable(address(proxy)));
     }
 
     function test_constructor() public {
