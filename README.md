@@ -517,30 +517,30 @@ Protocol fee balance is `withHoldEth`; it is withdrawn to `owner` by `withdrawFe
 
 ```mermaid
 flowchart TB
-    subgraph gov["Governance (onlyByOwnGov = owner OR timelock)"]
-        g1[addValidator(s) / remove / swap / clear]
-        g2[setFees / setMinStake / setBatchUnstakeParams<br/>setMaxValidatorPercentage / setWithholdRatio]
-        g3[unstakeGov / withdrawGov / withdrawFee / loadRewards]
-        g4[setSlashedAmount / setStPlumeRewards / setTimelock]
-        g5[moveWithheldETH / recoverEther / recoverERC20]
+    subgraph gov["Governance — onlyByOwnGov (owner OR timelock)"]
+        g1["addValidator / addValidators<br/>removeValidator / swapValidator / popValidators / clearValidatorArray"]
+        g2["setFees / setMinStake / setBatchUnstakeParams<br/>setMaxValidatorPercentage / setWithholdRatio"]
+        g3["unstakeGov / withdrawGov / withdrawFee / loadRewards"]
+        g4["setSlashedAmount / setStPlumeRewards / setTimelock"]
+        g5["moveWithheldETH / recoverEther / recoverERC20"]
     end
-    subgraph roles["stPlumeMinter AccessControl"]
+    subgraph roles["stPlumeMinter — AccessControl roles"]
+        r0["DEFAULT_ADMIN_ROLE<br/>grants and revokes the roles below"]
         r1["REBALANCER_ROLE<br/>rebalance · restake<br/>stakeWitheldForValidator · addFundsDirectly"]
         r2["CLAIMER_ROLE<br/>claim · claimAll"]
         r3["PAUSER_ROLE<br/>togglePauseSubmits · togglePauseDepositEther"]
-        r0["DEFAULT_ADMIN_ROLE<br/>grants the above"]
     end
-    subgraph rw["stPlumeRewards AccessControl"]
-        w1["MINTER_ROLE (minter + keeper)<br/>loadRewards · syncRewards · syncUser<br/>resetUserRewardsAfterClaim"]
-        w2["HANDLER_ROLE (myPLUME token)<br/>handleTokenTransfer"]
+    subgraph rw["stPlumeRewards — AccessControl roles"]
         w0["DEFAULT_ADMIN_ROLE<br/>setYieldFee · setRewardsCycleLength"]
+        w1["MINTER_ROLE — stPlumeMinter and keeper<br/>loadRewards · syncRewards · syncUser<br/>resetUserRewardsAfterClaim"]
+        w2["HANDLER_ROLE — myPLUME token<br/>handleTokenTransfer"]
     end
-    subgraph tok["myPLUME"]
-        t1["minters whitelist (stPlumeMinter)<br/>minter_mint · minter_burn_from"]
+    subgraph tok["myPLUME token"]
+        t1["minters whitelist — stPlumeMinter<br/>minter_mint · minter_burn_from"]
         t2["owner / timelock<br/>addMinter · removeMinter · updateStPlumeRewards"]
     end
     subgraph pub["Permissionless"]
-        p1[submit · submitAndGive · submitForValidator<br/>unstake · unstakeFromValidator · unstakeRewards<br/>withdraw · processBatchUnstake]
+        p1["submit · submitAndGive · submitForValidator<br/>unstake · unstakeFromValidator · unstakeRewards<br/>withdraw · processBatchUnstake"]
     end
 ```
 
