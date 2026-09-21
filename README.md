@@ -16,6 +16,7 @@
 
 ## Table of contents
 
+0. [How it works, in plain terms](#0-how-it-works-in-plain-terms)
 1. [System overview](#1-system-overview)
 2. [Contracts](#2-contracts)
 3. [Token model](#3-token-model)
@@ -31,6 +32,49 @@
 13. [Deployed addresses](#13-deployed-addresses)
 14. [Upgradeability](#14-upgradeability)
 15. [Building and testing](#15-building-and-testing)
+16. [Worked examples](#16-worked-examples)
+17. [Frequently asked questions](#17-frequently-asked-questions)
+18. [Glossary](#18-glossary)
+
+---
+
+## 0. How it works, in plain terms
+
+*This section is for readers who are not smart-contract engineers. Everything here is expanded with full technical detail in the sections that follow.*
+
+**What problem does this solve?**
+Plume is a blockchain whose native coin, PLUME, can be "staked": locked up with a validator (a computer that helps run the network) in exchange for rewards. Staking directly has two drawbacks — your coins are locked and cannot be used elsewhere, and unlocking them takes weeks. myPLUME solves both.
+
+**What is myPLUME?**
+myPLUME is a receipt token. When you deposit 100 PLUME with the protocol, you get 100 myPLUME back. The protocol stakes your PLUME with validators on your behalf. Your myPLUME is a normal token: you can hold it, send it, or use it in other applications, and it always represents the 100 PLUME you put in. Think of it like a claim ticket at a coat check — the ticket is not the coat, but it entitles you to the coat.
+
+**How do I earn?**
+The validators pay staking rewards in PLUME. The protocol collects them, keeps 10% as its fee, and shares the remaining 90% among everyone holding myPLUME, in proportion to how much each person holds and for how long. Your myPLUME balance does *not* grow; instead, your rewards build up in a separate ledger and you can cash them out in PLUME whenever you like.
+
+**How do I get my PLUME back?**
+You hand in your myPLUME (it is destroyed) and ask for PLUME. Two things can happen:
+
+- **Fast lane.** The protocol keeps a small cash reserve (about 2% of deposits) for people who want out immediately. If the reserve can cover you, you can withdraw right away for a 0.5% fee.
+- **Standard lane.** Otherwise, your request joins a queue. Roughly every three weeks the protocol sends the whole queue to the validators in one batch, the validators take about a week to release the coins, and then you can withdraw for a 0.015% fee. Total waiting time is typically between one and four weeks depending on when you joined the queue.
+
+**What could go wrong?**
+If a validator misbehaves, the network can confiscate ("slash") part of what is staked with it. Rather than letting whoever withdraws first escape the loss, the protocol spreads it evenly: every withdrawal after a slash gives back slightly less PLUME per myPLUME until the loss is fully paid for.
+
+**Who is in control?**
+A governance address (protected by a timelock) can change fees, add or remove validators, pause the system, and upgrade the contracts. A few narrower operational roles exist for automated "keeper" bots that claim rewards and rebalance funds. Ordinary users need no permission for anything.
+
+```mermaid
+flowchart LR
+    A["You deposit<br/>100 PLUME"] --> B["You receive<br/>100 myPLUME"]
+    B --> C["Protocol stakes your PLUME<br/>with Plume validators"]
+    C --> D["Validators pay rewards"]
+    D --> E["10% fee to protocol<br/>90% credited to holders"]
+    E --> F["Claim rewards in PLUME<br/>any time"]
+    B --> G["Hand in myPLUME<br/>to get PLUME back"]
+    G --> H{"Cash reserve<br/>can cover it?"}
+    H -- yes --> I["Withdraw now<br/>0.5% fee"]
+    H -- no --> J["Join queue → batch sent<br/>to validators → ~1 week<br/>cooldown → withdraw<br/>0.015% fee"]
+```
 
 ---
 
@@ -156,6 +200,8 @@ classDiagram
 
 ## 4. Staking
 
+> **In plain terms.** Deposit PLUME, get the same number of myPLUME. The protocol keeps 2% of your deposit as a cash reserve (still yours, just not staked) and stakes the other 98% with validators, filling them in a priority order set by governance and never letting one validator become too dominant. Deposits smaller than 0.1 PLUME are refused.
+
 ### Entry points
 
 | Function | Who | Behaviour |
@@ -212,6 +258,8 @@ sequenceDiagram
 ---
 
 ## 5. Unstaking and withdrawal
+
+> **In plain terms.** Getting PLUME back is a two-step process — first you *unstake* (hand in your myPLUME and get a numbered ticket), then later you *withdraw* (redeem the ticket for PLUME). If the cash reserve can pay you, the ticket is redeemable immediately for a 0.5% fee. If not, the ticket is dated: the protocol bundles everyone's requests and sends them to validators about every three weeks, the validators take about a week to release the coins, and then the ticket becomes redeemable for a 0.015% fee. Anyone can trigger the batch once it is due; there is no reliance on the team to do it.
 
 Redemption is a two-step process: **unstake** (burn myPLUME, create a `WithdrawalRequest`) then **withdraw** (claim PLUME once the request's timestamp is reached).
 
@@ -339,6 +387,8 @@ Notes:
 
 ## 6. Rewards mechanism
 
+> **In plain terms.** Validators pay rewards to the protocol in PLUME. Each time rewards are collected, 10% goes to the protocol's fee balance and 90% is credited to myPLUME holders, drip-fed evenly over the following 7 days so nobody can time a large reward payout. Your share is proportional to how much myPLUME you hold, second by second — if you send half your myPLUME to a friend, you stop earning on that half and they start, from that moment. The reward PLUME itself is put back to work with validators until you claim it. Claiming turns your rewards into a normal withdrawal ticket (fast lane or standard lane, as above).
+
 ### 6.1 Overview
 
 ```mermaid
@@ -419,6 +469,8 @@ Because the reward PLUME is physically staked, a reward claim is fulfilled exact
 
 ## 7. Slashing
 
+> **In plain terms.** If the network confiscates part of the protocol's stake because a validator misbehaved, governance records the size of the loss. From then on, everyone who withdraws gets back proportionally less until the loss has been fully shared out. This prevents a "bank run" where early withdrawers escape whole and late withdrawers carry the entire loss. Reward claims are not reduced.
+
 Plume validators can be slashed. The protocol socialises any such loss across all holders rather than letting the first redeemers exit whole.
 
 - Governance records the loss with `setSlashedAmount(uint256)` (`onlyByOwnGov`). This is an accounting entry; the PLUME is already gone from the minter's validator stake.
@@ -437,6 +489,8 @@ Plume validators can be slashed. The protocol socialises any such loss across al
 ---
 
 ## 8. Operator Registry (validator management)
+
+> **In plain terms.** This is the protocol's list of approved validators, in priority order. Governance decides who is on it and in what order. New deposits go to the first validator on the list that has room; withdrawals are pulled from the list in the same order. Governance can also cap how large a share of the whole Plume network any one validator may hold through this protocol.
 
 `OperatorRegistry` holds an **ordered array** of Plume validator IDs. The order matters: round-robin deposits and unstakes walk the array from index 0, so index 0 is the highest-priority validator for both inflows and outflows.
 
@@ -472,6 +526,8 @@ Removing a validator from the registry does **not** unstake from it; governance 
 ---
 
 ## 9. Periphery — MyPlumeFeed
+
+> **In plain terms.** A read-only "dashboard" contract. It does not hold or move any money; it just adds up numbers from the other contracts so that wallets, price oracles (such as Chainlink) and analytics sites can ask one place for "how much PLUME backs each myPLUME?", "how much is staked?", "how much reward has been earned?", and "how much can be withdrawn instantly right now?".
 
 `MyPlumeFeed` is a stateless, view-only proxy contract that composes the numbers integrators and price feeds need. It reads `myPLUME`, `stPlumeMinter`, `stPlumeRewards` and `PlumeStaking` and never mutates state.
 
@@ -515,6 +571,8 @@ Protocol fee balance is `withHoldEth`; it is withdrawn to `owner` by `withdrawFe
 
 ## 11. Roles and access control
 
+> **In plain terms.** Three tiers of control exist. **Governance** (an owner address and a timelock) can change every setting, manage validators, pause, and upgrade. **Operational roles** are narrow permissions given to automated keeper bots — one can collect rewards, one can rebalance funds between the reserve and validators, one can hit the pause switch. **Everyone else** can deposit, withdraw, claim rewards and trigger the batch queue without permission.
+
 ```mermaid
 flowchart TB
     subgraph gov["Governance — onlyByOwnGov (owner OR timelock)"]
@@ -551,6 +609,8 @@ Pausing: `submitPaused` stops new deposits only. `depositEtherPaused` stops stak
 ---
 
 ## 12. Accounting model and invariants
+
+> **In plain terms.** The protocol keeps a handful of running totals so that it always knows how much PLUME is sitting in its reserve, how much of that reserve is already spoken for by pending withdrawals, how much is owed to people holding tickets, and how much belongs to the protocol as fees. The "invariants" are the rules that must always hold between these totals — for example, the reserve may never be promised to more people than it can pay.
 
 Balances tracked by the minter:
 
@@ -634,6 +694,62 @@ Static analysis:
 ```bash
 slither ./src/stPlumeMinter.sol --solc-remaps "openzeppelin-contracts=lib/openzeppelin-contracts openzeppelin-contracts-upgradeable=lib/openzeppelin-contracts-upgradeable solmate=lib/solmate/src"
 ```
+
+---
+
+## 16. Frequently asked questions
+
+**Does my myPLUME balance grow over time?**
+No. myPLUME is not a rebasing token. Your balance stays fixed; rewards accumulate in a separate ledger (`stPlumeRewards`) and are paid in PLUME when you call `unstakeRewards()` and then `withdraw()`.
+
+**Is 1 myPLUME always worth 1 PLUME?**
+Each myPLUME is backed by 1 PLUME of principal, so the protocol's own valuation (`MyPlumeFeed.getMyPlumePrice()`) is ≈ 1.0 unless a slashing loss has been recorded and not yet absorbed. The *market* price on an exchange may differ from the backing price, as with any liquid staking token.
+
+**Why wait up to four weeks?**
+Plume validators impose a cooldown (about a week) before unstaked coins are released. On top of that, the protocol bundles requests into one batch per validator every ~3 weeks so that a single cooldown covers many users. Depending on when you join a batch, your wait is between about one week and about four.
+
+**What happens if the validator rewards claim fails?**
+Reward collection is wrapped in a `try/catch`, so a failure on Plume's side never blocks deposits, withdrawals or claims — the rewards are simply collected next time.
+
+**Can I choose which validator my PLUME goes to?**
+Yes: `submitForValidator(validatorId)` stakes your whole deposit with one specific approved validator, and `unstakeFromValidator` pulls from a specific one. The default `submit()` / `unstake()` let the protocol choose.
+
+**What can the automated keeper do?**
+Only claim rewards from Plume, rebalance PLUME between the reserve and validators, and trigger reward syncs. It cannot mint tokens, move funds to outside addresses, or change fees.
+
+---
+
+## 17. Glossary
+
+| Term | Meaning |
+|---|---|
+| **PLUME** | The native coin of the Plume network. |
+| **myPLUME** | Mystic's liquid staking token; a 1:1 receipt for PLUME deposited into the protocol. Called `frxETH` in the source code. |
+| **Staking** | Locking PLUME with a validator to help secure the network in exchange for rewards. |
+| **Validator** | A node operator on Plume. The protocol maintains a governance-approved, priority-ordered list of validator IDs. |
+| **PlumeStaking** | Plume Network's own staking contract, which the protocol talks to. External to this codebase. |
+| **Liquid staking token (LST)** | A token that represents staked assets but remains freely transferable. |
+| **Minter** | `stPlumeMinter`, the contract that accepts PLUME, issues myPLUME and manages staking and withdrawals. Called "minter" because it is the only address allowed to mint or burn myPLUME. |
+| **Reserve / withheld PLUME** | The ~2% of deposits kept unstaked in the minter (`currentWithheldETH`) to fund instant withdrawals. |
+| **Instant (fast-lane) withdrawal** | A withdrawal paid straight from the reserve, available immediately, 0.5% fee. |
+| **Standard (queued) withdrawal** | A withdrawal fulfilled by unstaking from validators after the batch window and Plume cooldown, 0.015% fee. |
+| **Withdrawal request / ticket** | The on-chain record (`WithdrawalRequest`) created when you unstake; redeemed with `withdraw(recipient, id)`. |
+| **Deficit** | The part of a queued withdrawal that validators could not supply and that is instead reserved from the reserve. |
+| **Batch unstake** | Sending all queued withdrawal requests for a validator to Plume in one transaction, once every `batchUnstakeInterval` (~3 weeks). |
+| **Cooldown** | The waiting period Plume enforces between unstaking and the coins becoming withdrawable (`getCooldownInterval()`, ~1 week). |
+| **Queue threshold** | The maximum PLUME (100,000) that may be queued against a single validator before its batch window opens. |
+| **Rewards contract** | `stPlumeRewards`; keeps the per-holder ledger of earned rewards. |
+| **Reward cycle** | The 7-day period over which each batch of collected rewards is streamed to holders. |
+| **rewardPerToken** | The running index used by the Synthetix accounting model: total rewards ever streamed per unit of myPLUME. A holder's earnings are their balance × the change in this index since their last checkpoint. |
+| **Checkpoint** | Recording a holder's rewards at the moment their balance changes, so transfers never gain or lose rewards. |
+| **Yield fee** | The protocol's 10% cut of staking rewards. |
+| **Slashing** | Confiscation of staked coins by the network as a penalty for validator misbehaviour. |
+| **Socialised loss** | Spreading a slashing loss evenly across all holders via a pro-rata haircut on redemptions. |
+| **Governance / owner / timelock** | The addresses allowed to change protocol settings. The timelock enforces a delay on sensitive changes. |
+| **Keeper** | An automated bot holding a narrow operational role (claiming rewards, rebalancing). |
+| **Proxy / upgradeable** | A pattern where the contract's address stays fixed while its code can be replaced by the `ProxyAdmin`. |
+| **Feed** | `MyPlumeFeed`, the read-only contract that reports price, TVL and reward figures for integrators. |
+| **TVL** | Total value locked — here, the total myPLUME supply, i.e. total PLUME principal deposited. |
 
 ---
 
