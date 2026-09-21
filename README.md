@@ -697,78 +697,7 @@ slither ./src/stPlumeMinter.sol --solc-remaps "openzeppelin-contracts=lib/openze
 
 ---
 
-## 16. Worked examples
-
-All numbers use the default parameters from §10. Fees are rounded for readability.
-
-### Example A — Deposit
-
-Alice deposits **1,000 PLUME** via `submit()`.
-
-| Step | Effect |
-|---|---|
-| Mint | Alice receives **1,000 myPLUME** |
-| Reserve | 2% = **20 PLUME** stays in the minter's cash reserve (`currentWithheldETH`) |
-| Stake | 980 PLUME is staked. Validator 3 (first in the list) has 600 PLUME of capacity left, so 600 goes there and the remaining 380 goes to validator 9 |
-| Rewards ledger | Alice's reward checkpoint is set to "now", so she starts earning from this moment |
-
-Nothing is deducted from Alice: 1,000 PLUME went in, 1,000 myPLUME came out, and 1,000 PLUME (20 reserve + 980 staked) backs it.
-
-### Example B — Rewards over one week
-
-Validators pay the protocol **100 PLUME** in rewards, collected automatically when the next user transacts.
-
-| Step | Effect |
-|---|---|
-| Fee | 10 PLUME → protocol fee balance (`withHoldEth`) |
-| Net | 90 PLUME → sent back to the minter and staked with validators |
-| Streaming | 90 PLUME is credited to holders evenly over 7 days (≈ 12.86 PLUME per day across everyone) |
-| Alice's share | If Alice's 1,000 myPLUME is 1% of total supply, she earns ≈ 0.129 PLUME per day, ≈ 0.9 PLUME after the week |
-
-If Alice transfers 500 myPLUME to Bob on day 3, her accrual rate halves from that block and Bob's begins. The 0.39 PLUME she earned in days 1–3 stays hers.
-
-### Example C — Fast-lane redemption
-
-Alice calls `unstake(100)`. The reserve holds 20 PLUME from her deposit plus reserves from other users — say 5,000 PLUME, with 1,000 already promised to other pending withdrawals.
-
-| Check | Result |
-|---|---|
-| Burn | 100 myPLUME destroyed |
-| Reserve can cover `100 + 1,000` promised? | 5,000 ≥ 1,100 → **yes, instant** |
-| Ticket | id 0, `timestamp = now` |
-| `withdraw(alice, 0)` | Fee 0.5% = 0.5 PLUME; Alice receives **99.5 PLUME** immediately |
-
-### Example D — Standard-lane redemption
-
-Later, the reserve is low. Alice calls `unstake(500)`.
-
-| Check | Result |
-|---|---|
-| Burn | 500 myPLUME destroyed |
-| Reserve can cover? | No → queue |
-| Validator 3 | The protocol has 600 staked there and 100 already queued, so up to 500 can be queued → all 500 queued against validator 3 |
-| Batch window | Validator 3's next batch is in 12 days; Plume cooldown is 7 days |
-| Ticket | id 1, `timestamp = now + 12 days + 7 days` |
-| Day 12 | Someone (anyone) calls `processBatchUnstake()`; the protocol asks Plume to unstake 600 PLUME (Alice's 500 + the earlier 100) from validator 3 |
-| Day 19 | Alice calls `withdraw(alice, 1)`; the protocol pulls the cooled PLUME from Plume, deducts 0.015% = 0.075 PLUME, and Alice receives **499.925 PLUME** |
-
-### Example E — Slashing
-
-Total supply is 100,000 myPLUME and a validator is slashed for **1,000 PLUME**. Governance records `slashedAmount = 1,000`.
-
-Bob unstakes 10,000 myPLUME:
-
-```
-S         = 100,000                       (supply before Bob's burn)
-newAmount = 10,000 × (100,000 − 1,000) / 100,000 = 9,900 PLUME
-slashedAmount ← 1,000 − (10,000 − 9,900) = 900
-```
-
-Bob receives a ticket for 9,900 PLUME (a 1% haircut, matching the 1% loss). The next redeemer is haircut against the remaining 900 over the remaining 90,000 supply — still 1%. Every holder bears the same proportional loss regardless of when they exit.
-
----
-
-## 17. Frequently asked questions
+## 16. Frequently asked questions
 
 **Does my myPLUME balance grow over time?**
 No. myPLUME is not a rebasing token. Your balance stays fixed; rewards accumulate in a separate ledger (`stPlumeRewards`) and are paid in PLUME when you call `unstakeRewards()` and then `withdraw()`.
@@ -790,7 +719,7 @@ Only claim rewards from Plume, rebalance PLUME between the reserve and validator
 
 ---
 
-## 18. Glossary
+## 17. Glossary
 
 | Term | Meaning |
 |---|---|
