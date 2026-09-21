@@ -1,331 +1,640 @@
-# Frax Staked Ethereum
-
-## Flowchart
-
-![frxETH Flowchart](flowchart.svg)
-
-## Overview Documentation
-
-[https://docs.frax.finance/frax-ether/overview](https://docs.frax.finance/frax-ether/overview).
-
-<!-- //////////////////////////////////////////////////////////////// -->
-
-# Building and Testing
-
-## Setup
-
-1. `git clone https://github.com/FraxFinance/frxETH-public.git --recurse-submodules --remote-submodules`
-2. Install [foundry](https://book.getfoundry.sh/getting-started/installation)
-3. `forge install`
-4. `git submodule update --init --recursive`
-   4a) `cd ./lib/ERC4626 && git checkout main`. This should switch it to `corddry`'s fork.
-5. (Optional) Occasionally update / pull your submodules to keep them up to date. `git submodule update --recursive --remote`
-6. Create your own .env and copy SAMPLE.env into there. Sample mainnet validator deposit keys are in test/deposit_data-TESTS-MAINNET.json if you need more.
-7. You don't need to add PRIVATE_KEY, ETHERSCAN_KEY, or FRXETH_OWNER if you are not actually deploying on live mainnet
-
-### Forge
-
-Manually, forced
-`forge build --force`
-
-## Testing
-
-### General / Helpful Notes
-
-1. If you want to add more fuzz cycles, edit foundry.toml
-2. Foundry [cheatcodes](https://book.getfoundry.sh/cheatcodes/)
-
-### Forge
-
-Most cases
-`source .env && forge test -vv`
-
-If you need to fork mainnet
-`source .env && forge test --fork-url $MAINNET_RPC_URL -vv`
-
-If you need to fork mainnet, single test contract
-`source .env && forge test --fork-url $MAINNET_RPC_URL -vv --match-path ./test/frxETHMinter.t.sol`
-
-Verbosely test a single contract while forking mainnet
-or `source .env && forge test --fork-url $MAINNET_RPC_URL -m test_frxETHMinter_submitAndDepositRegular -vvvvv` for single test verbosity level 5
-
-### Other Scipts
-
-tsx validate-msig-add-validators.ts
-
-DepositDataToCalldata: SEE THE DepositDataToCalldata.s.sol FILE ITSELF FOR INSTRUCTIONS
-
-### Slither
-
-1. Install [slither](https://github.com/crytic/slither#how-to-install)
-2. Slither a single contract
-   `slither ./src/sfrxETH.sol --solc-remaps "openzeppelin-contracts=lib/openzeppelin-contracts ERC4626=lib/ERC4626/src solmate=lib/solmate/src"`
-
-<!-- //////////////////////////////////////////////////////////////// -->
-
-# Deployment & Environment Setup
-
-## Deploy
-
-1. Deploy frxETH.sol
-2. Deploy sfrxETH.sol
-3. Deploy frxETHMinter.sol
-4. Add the frxETHMinter as a valid minter for frxETH
-5. (Optional, depending on how you want to test) Add some validators to frxETHMinter
-
-### Goerli
-
-#### Single deploy
-
-`source .env && forge create src/frxETH.sol:frxETH --private-key $PRIVATE_KEY --rpc-url $GOERLI_RPC_URL --verify --optimize --etherscan-api-key $ETHERSCAN_KEY --constructor-args $FRXETH_OWNER $TIMELOCK_ADDRESS`
-
-#### Group deploy script
-
-Goerli
-`source .env && forge script script/deployGoerli.s.sol:Deploy --rpc-url $GOERLI_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify --etherscan-api-key $ETHERSCAN_KEY`
-Mainnet
-`source .env && forge script script/deployMainnet.s.sol:Deploy --rpc-url $MAINNET_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify --etherscan-api-key $ETHERSCAN_KEY`
-
-#### Etherscan Verification
-
-Sometimes the deploy scripts above fail with Etherscan's verification API. In that case, use:
-`forge flatten src/frxETHMinter.sol -o flattened.sol`
-Then do
-`sed -i '/SPDX-License-Identifier/d' ./flattened.sol && sed -i '/pragma solidity/d' ./flattened.sol && sed -i '1s/^/\/\/ SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity >=0.8.0;\n\n/' flattened.sol`
-
-## Development
-
-To make new dependencies play nicely with VSCode:
-`forge remappings > remappings.txt`
-
-<!-- //////////////////////////////////////////////////////////////// -->
-
-# Contracts Under Review
-
-## ERC20PermitPermissionedMint.sol
-
-Parent contract for frxETH.sol. Has EIP-712/EIP-2612 permit capability, is burnable, and has an array of authorized minters. Is also owned.
-
-## frxETH.sol
-
-Basically the same as ERC20PermitPermissionedMint.sol
-
-## frxETHMinter.sol
-
-Authorized minter for frxETH. Users deposit ETH for frxETH. It then deposits that ETH into ETH 2.0 staking validators to earn yield. It can also withhold part of the ETH deposit for future use, such as to earn yield in other places to supplement the ETH 2.0 staking yield.
-
-## OperatorRegistry.sol
-
-Keeps track of available validators to add batches of 32 ETH to. Contains various array manipulations. It is assumed that validator checks for validity, as well as ordering in the array, are done off-chain to save gas beforehand.
-
-## sfrxETH.sol
-
-Autocompounding vault token for frxETH. Users deposit their frxETH for sfrxETH. Adheres to ERC4626/xERC4626. Any rewards earned externally, such as from ETH 2.0 staking, are converted to frxETH then sent here. After that happens, the exchange rate / pricePerShare for the sfrxETH token increases and sfrxETH hodlers can exchange their sfrxETH tokens for more frxETH than they initially put in (this is their rewards). Has EIP-712/EIP-2612 permit capability.
-
-<!-- //////////////////////////////////////////////////////////////// -->
-
-# Contracts Included but not under review
-
-## ERC4626.sol, xERC4626.sol
-
-Already audited several times.
-
-## DepositContract.sol
-
-Official Ethereum 2.0 deposit contract.
-
-## Owned.sol
-
-Synthetix.io created.
-
-## SigUtils.sol
-
-Only used for testing, so no need to audit.
-
-## ERC20Permit, ERC20Burnable, etc
-
-Openzeppelin created contracts are already extensively audited.
-
-<!-- //////////////////////////////////////////////////////////////// -->
-
-# Known Issues
-
-### xERC4626.sol
-
-xTRIBE, which is xERC4626.sol based and has some functions that sfrxETH.sol uses, has two known medium severity corner case issues [M-01](https://code4rena.com/reports/2022-04-xtribe/#m-01-xerc4626sol-some-users-may-not-be-able-to-withdraw-until-rewardscycleend-the-due-to-underflow-in-beforewithdraw) and
-[M-02](https://github.com/code-423n4/2022-04-xtribe-findings/issues/66)
-
-### OperatorRegistry.sol
-
-No checking for valid validator pubkeys, signatures, etc are done here. They are assumed to be done off chain before they are added. However, the official ETH 2.0 DepositContract.sol DOES do checks and will revert if something is wrong. It is assumed that the team, or the manager(s) of the OperatorRegistry.sol contract will remove/replace the offending invalid validators.
-
-<!-- //////////////////////////////////////////////////////////////// -->
-
-# Contest Scope
-
-- stPlume/src/frxETHMinter.sol
-- stPlume/src/stPlumeMinter.sol
-- stPlume/src/OperatorRegistry.sol
-
-- Original frxETH Repository: [https://github.com/FraxFinance/frxETH-public](https://github.com/FraxFinance/frxETH-public)
-  -~600 Total sLoC in scope (increased from 365 due to new contracts)
-- Contracts use inheritance, most of the parents are time/battle tested Openzeppelin or other contracts
-- Most public interaction will be with stPlumeMinter.sol, sfrxETH.sol, and OperatorRegistry.sol
-- frxETH.sol conforms to EIP-712/EIP-2612 and ERC-20 standards and uses Openzeppelin and Synthetix.io parents
-- sfrxETH.sol conforms to EIP-712/EIP-2612, ERC-4626, and ERC-20 standards
-- stPlumeMinter.sol extends frxETHMinter with staking, unstaking, and reward claiming functionality
-- OperatorRegistry.sol manages validators for ETH staking operations
-- Interacts with Plume Staking protocol for validator management and ETH staking: [https://github.com/plumenetwork/contracts/tree/main/plume](https://github.com/plumenetwork/contracts/tree/main/plume)
-- No novel or unique curve logic or mathematical models-
-- Not an NFT
-- Not an AMM
-- Not a fork of a popular project
-- Does not use rollups
-- Single-chain only
-
-
-
-forge install https://github.com/transmissions11/solmate@62e0943c013a66b2720255e2651450928f4eed7a
-forge install https://github.com/OpenZeppelin/openzeppelin-contracts@8d908fe2c20503b05f888dd9f702e3fa6fa65840
-forge install https://github.com/foundry-rs/forge-std
-forge install https://github.com/corddry/ERC4626@6cf2bee5d784169acb02cc6ac0489ca197a4f149
-
-
-REWARD Mechanism:
-
-Core Components of the Reward System
-
-1. Reward Collection and Fee Structure
-The reward system begins with collecting yields from staking ETH with validators through the PlumeStaking protocol:
-
-- Yield Fee: The contract takes a configurable fee (default 10% via YIELD_FEE = 100000)
-- Redemption Fees: Two types of fees are charged when users withdraw:
-    - Standard redemption fee: 0.015% (REDEMPTION_FEE = 150)
-    - Instant redemption fee: 0.5% (INSTANT_REDEMPTION_FEE = 5000)
-
-2. Reward Accumulation Mechanism
-Rewards are collected through several methods:
-
-- claim() - Claims rewards from a specific validator
-- claimAll() - Claims rewards from all validators
-- loadRewards() - Allows direct ETH deposits as rewards
-- _rebalance() - Internal function that claims rewards and loads them
-When rewards are received, they're processed through _loadRewards():
-
-```solidity
-function _loadRewards(uint256 amount) internal {
-    if(amount > 0){
-        uint256 yieldAmount = amount * YIELD_FEE / RATIO_PRECISION;
-        yieldEth += amount - yieldAmount;
-        withHoldEth += yieldAmount;
-        _depositEther(amount - yieldAmount, 0);
-        if (block.timestamp >= rewardsCycleEnd) { syncRewards(); }
+# myPLUME — Mystic Liquid Staking on Plume
+
+**Technical documentation for the stPlumeMinter, stPlumeRewards, OperatorRegistry and periphery contracts.**
+
+| | |
+|---|---|
+| Network | Plume Mainnet |
+| Liquid staking token | `myPLUME` — *Mystic Staked Plume* (ERC-20, EIP-2612 permit) |
+| Underlying | Native PLUME staked with Plume Network validators via the canonical `PlumeStaking` contract |
+| Codebase | `src/` in this repository (branch `staked-plume`) |
+| Lineage | Fork of Frax Finance `frxETH` v1 (`frxETHMinter`, `OperatorRegistry`, `ERC20PermitPermissionedMint`), extended with Plume-specific staking, unstaking, batching, rewards and slashing logic |
+
+> **Naming note.** Several contracts and identifiers keep their Frax names (`frxETH`, `frxETHMinter`, `currentWithheldETH`, `_depositEther`, …). In this deployment every "ETH" refers to **native PLUME** and every "frxETH" refers to **myPLUME**. This document uses the Plume names in prose and the code names where a function or variable is cited.
+
+---
+
+## Table of contents
+
+1. [System overview](#1-system-overview)
+2. [Contracts](#2-contracts)
+3. [Token model](#3-token-model)
+4. [Staking](#4-staking)
+5. [Unstaking and withdrawal](#5-unstaking-and-withdrawal)
+6. [Rewards mechanism](#6-rewards-mechanism)
+7. [Slashing](#7-slashing)
+8. [Operator Registry (validator management)](#8-operator-registry-validator-management)
+9. [Periphery — MyPlumeFeed](#9-periphery--myplumefeed)
+10. [Fees and parameters](#10-fees-and-parameters)
+11. [Roles and access control](#11-roles-and-access-control)
+12. [Accounting model and invariants](#12-accounting-model-and-invariants)
+13. [Deployed addresses](#13-deployed-addresses)
+14. [Upgradeability](#14-upgradeability)
+15. [Building and testing](#15-building-and-testing)
+
+---
+
+## 1. System overview
+
+myPLUME is a liquid staking token for the Plume network. Users deposit native PLUME into `stPlumeMinter`, receive myPLUME 1:1, and the minter stakes the PLUME across a curated set of Plume validators. Staking rewards are claimed from Plume, a protocol fee is taken, and the remainder is streamed to myPLUME holders pro-rata through a Synthetix-style reward accumulator (`stPlumeRewards`). Holders can redeem myPLUME for PLUME either instantly from a liquidity buffer (with a higher fee) or through a batched unstake queue that respects the Plume validator cooldown.
+
+```mermaid
+flowchart LR
+    subgraph Users
+        U[User / Integrator]
+    end
+
+    subgraph Mystic["Mystic Liquid Staking (this repo)"]
+        T["myPLUME<br/>(frxETH.sol)<br/>ERC-20 + permit"]
+        M["stPlumeMinter<br/>(proxy)<br/>deposits · unstake queue<br/>withdrawals · slashing"]
+        R["stPlumeRewards<br/>(proxy)<br/>reward streaming<br/>per-holder accounting"]
+        O["OperatorRegistry<br/>(inherited by minter)<br/>validator list"]
+        F["MyPlumeFeed<br/>(proxy, view-only)<br/>price · TVL · APR data"]
+    end
+
+    subgraph Plume["Plume Network"]
+        P["PlumeStaking<br/>0x30c7…E871"]
+        V1[(Validator 1)]
+        V2[(Validator 3)]
+        Vn[(Validator n)]
+    end
+
+    U -- "submit() PLUME" --> M
+    M -- "mint / burn" --> T
+    T -- "transfer hook<br/>handleTokenTransfer()" --> R
+    M -- "stake / unstake /<br/>withdraw / claim" --> P
+    P --> V1 & V2 & Vn
+    M -- "claimed rewards" --> R
+    R -- "net rewards (restaked)<br/>+ protocol fee" --> M
+    M --- O
+    F -. reads .-> T & M & R & P
+```
+
+**Key design properties**
+
+- **Non-rebasing, 1:1 principal token.** One myPLUME always represents one PLUME of *principal*. Yield is not folded into the token balance or an exchange rate; it is tracked per holder in `stPlumeRewards` and paid out in PLUME on demand.
+- **Two redemption paths.** *Instant* (from the withheld liquidity buffer, 0.5% fee) and *standard* (batched validator unstake + Plume cooldown, 0.015% fee).
+- **Batched validator unstaking.** Unstake requests against a validator are aggregated and pushed to `PlumeStaking` once per `batchUnstakeInterval` (21 days + 1 hour), so a single Plume cooldown covers the whole batch.
+- **Rewards are restaked.** Net staking rewards are re-deposited into validators the moment they are claimed, so the reward pool itself keeps earning until holders claim it.
+- **Socialised slashing.** A governance-recorded `slashedAmount` is applied pro-rata to every redemption until the loss is fully absorbed.
+- **Upgradeable.** `stPlumeMinter`, `stPlumeRewards` and `MyPlumeFeed` sit behind OpenZeppelin `TransparentUpgradeableProxy` with a shared `ProxyAdmin`.
+
+---
+
+## 2. Contracts
+
+| Contract | File | Type | Purpose |
+|---|---|---|---|
+| `frxETH` (myPLUME) | `src/frxETH.sol` | Non-upgradeable ERC-20 | The liquid staking token. Permissioned mint/burn by whitelisted minters. Notifies `stPlumeRewards` on every transfer so reward checkpoints are exact. |
+| `ERC20PermitPermissionedMint` | `src/ERC20/ERC20PermitPermissionedMint.sol` | Abstract base | OZ `ERC20Permit` + `ERC20Burnable` + Synthetix `Owned`, with a minter whitelist. |
+| `stPlumeMinter` | `src/stPlumeMinter.sol` | Upgradeable (proxy) | Core protocol contract. Accepts PLUME, mints myPLUME, allocates stake to validators, runs the unstake queue and withdrawal logic, holds the liquidity buffer and protocol fees, applies slashing. |
+| `frxETHMinter` | `src/frxETHMinter.sol` | Abstract base | Frax base minter: `submit()`, withhold ratio, pause flags, emergency recovery. |
+| `OperatorRegistry` | `src/OperatorRegistry.sol` | Abstract base | Ordered list of Plume validator IDs the minter may stake to; owner/timelock managed. |
+| `stPlumeRewards` | `src/stPlumeRewards.sol` | Upgradeable (proxy) | Synthetix `StakingRewards`-derived accumulator. Takes the protocol yield fee, streams net rewards over a 7-day cycle, tracks each holder's earned PLUME. |
+| `MyPlumeFeed` | `src/Periphery/MyPlumeFeed.sol` | Upgradeable (proxy), view-only | Read-only aggregator for integrators and oracles: price, TVL, staked amount, accrued rewards, liquidity ratio, fees. |
+| `IPlumeStaking` / `PlumeStakingStorage` | `src/interfaces/` | Interfaces | ABI of the external Plume Network staking contract. |
+| `stPlumeRewardsLegacy`, `sfrxETH`, `DepositContract` | `src/` | Not in use | Retained for history / tests. `sfrxETH` (ERC-4626 vault) is **not deployed** on Plume. |
+
+### Inheritance
+
+```mermaid
+classDiagram
+    direction TB
+    class OwnedUpgradeable
+    class OperatorRegistry {
+        Validator[] validators
+        address timelock_address
+        addValidator() / addValidators()
+        removeValidator() / swapValidator() / popValidators()
+        clearValidatorArray()
+        numValidators() / getValidator()
     }
-}
-```
-
-3. Cycle-Based Reward Distribution
-The system uses a time-based cycle mechanism for distributing rewards:
-- Reward Cycles: Rewards are distributed over cycles (default 7 days via rewardsCycleLength)
-- Cycle Tracking: Each cycle's rewards and total supply are recorded in the cycleRewards array
-- Gradual Unlocking: Rewards are linearly unlocked over the cycle period
-
-The syncRewards() function manages cycle transitions:
-
-```solidity
-function syncRewards() public virtual {
-    uint256 timestamp = block.timestamp;
-    require(timestamp >= rewardsCycleEnd, "Not in rewards cycle");
-    require(yieldEth >= lastRewardAmount, "Negative rewards");
-
-    uint256 nextRewards = yieldEth - lastRewardAmount;
-    rewardsEth += nextRewards;
-    cycleRewards.push(CycleRewards({
-        rewards: nextRewards,
-        totalSupply: frxETHToken.totalSupply(),
-        cycleEnd: rewardsCycleEnd
-    }));
-    
-    // Set up the next cycle
-    uint256 end = ((timestamp + rewardsCycleLength) / rewardsCycleLength) * rewardsCycleLength;
-    if (end - timestamp < rewardsCycleLength / 20) {
-        end += rewardsCycleLength;
+    class frxETHMinter {
+        uint withholdRatio
+        uint currentWithheldETH
+        bool submitPaused / depositEtherPaused
+        submit() / submitAndGive()
+        setWithholdRatio() / moveWithheldETH()
+        recoverEther() / recoverERC20()
     }
-
-    lastRewardAmount = uint192(nextRewards);
-    lastSync = uint32(timestamp);
-    rewardsCycleEnd = uint32(end);
-}
-```
-
-4. User Reward Tracking
-The contract meticulously tracks each user's rewards:
-
-- Per-User Tracking: userRewards mapping tracks each user's accumulated rewards
-- Reward Accrual: When users interact with the contract (deposit/withdraw), their rewards are accrued
-- Cycle Tracking: The contract tracks which cycles a user has claimed rewards from
-
-5. Reward Calculation
-The getYield() function calculates the total available yield:
-
-```solidity
-function getYield() public view returns (uint256) {
-    if (block.timestamp >= rewardsCycleEnd) {
-        return rewardsEth + lastRewardAmount;
+    class stPlumeMinter {
+        REDEMPTION_FEE / INSTANT_REDEMPTION_FEE
+        minStake / withHoldEth / slashedAmount
+        withdrawalQueueThreshold / batchUnstakeInterval
+        totalInstantUnstaked / totalUnstaked
+        withdrawalRequests / withdrawalRequestCount
+        totalQueuedWithdrawalsPerValidator
+        nextBatchUnstakeTimePerValidator
+        submitForValidator() / unstake() / unstakeFromValidator()
+        withdraw() / unstakeRewards() / processBatchUnstake()
+        rebalance() / restake() / claim() / claimAll()
+        unstakeGov() / withdrawGov() / withdrawFee()
     }
-    uint256 unlockedRewards = (lastRewardAmount * (block.timestamp - lastSync)) / (rewardsCycleEnd - lastSync);
-    return rewardsEth + unlockedRewards;
-}
-```
-For individual users, rewards are calculated based on:
-- Their token balance
-- The cycles they've participated in
-- The current unlocked rewards
+    class AccessControlUpgradeable
+    class ReentrancyGuardUpgradeable
 
-The normalizedAmount() function returns a user's balance plus accrued rewards:
+    OwnedUpgradeable <|-- OperatorRegistry
+    OperatorRegistry <|-- frxETHMinter
+    ReentrancyGuardUpgradeable <|-- frxETHMinter
+    frxETHMinter <|-- stPlumeMinter
+    AccessControlUpgradeable <|-- stPlumeMinter
+```
+
+---
+
+## 3. Token model
+
+`myPLUME` is a plain ERC-20 (name *Mystic Staked Plume*, symbol `myPLUME`, 18 decimals) with EIP-2612 permits.
+
+- **Minting** happens only in `stPlumeMinter._submit()`, at exactly `msg.value` — 1 myPLUME per 1 PLUME deposited, *before* the withhold ratio is applied. The withheld portion stays in the minter as user-owned liquidity; it is not a fee.
+- **Burning** happens only in `stPlumeMinter._unstake()` when a holder redeems.
+- **No rebasing, no exchange rate.** `balanceOf` never changes on its own. A holder's yield is `stPlumeRewards.getUserRewards(holder)`, denominated in PLUME, and is claimed via `stPlumeMinter.unstakeRewards()`.
+- **Transfer hook.** `frxETH._beforeTokenTransfer` calls `stPlumeRewards.handleTokenTransfer(from)` and `handleTokenTransfer(to)` (skipping the zero address and the token itself). This checkpoints both parties' `rewardPerToken` *before* balances change, which is what makes the Synthetix accounting exact under transfers, mints and burns.
+- **Reference price.** Because principal is 1:1, the fair price reported by `MyPlumeFeed.getMyPlumePrice()` is the protocol's net PLUME backing divided by supply and is expected to sit at ≈ 1.0 PLUME, moving below 1.0 only if a slashing loss has been recorded and not yet fully absorbed.
+
+---
+
+## 4. Staking
+
+### Entry points
+
+| Function | Who | Behaviour |
+|---|---|---|
+| `submit()` | anyone, `payable` | Mint myPLUME to `msg.sender`; stake across validators in registry order. |
+| `submitAndGive(address recipient)` | anyone, `payable` | Same, but mint to `recipient`. |
+| `submitForValidator(uint16 validatorId)` | anyone, `payable` | Mint to `msg.sender`; stake the whole deposit to one specific registered validator. |
+| `receive()` | anyone | Plain PLUME transfer to the minter behaves like `submit()`. Transfers from `PlumeStaking`, the Plume treasury and `stPlumeRewards` are treated specially (see §6). |
+
+All paths require `!submitPaused`, `msg.value > 0`, and the post-withhold amount to be `≥ minStake` (0.1 PLUME).
+
+### Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant M as stPlumeMinter
+    participant T as myPLUME
+    participant R as stPlumeRewards
+    participant P as PlumeStaking
+
+    User->>M: submit() {value: X}
+    M->>M: _rebalance() — claim pending Plume rewards (§6)
+    M->>T: minter_mint(User, X)
+    T->>R: handleTokenTransfer(User) — checkpoint rewards
+    M->>M: withheld = X × withholdRatio (2%)<br/>currentWithheldETH += withheld
+    M->>M: require(X − withheld ≥ minStake)
+    loop for each validator in registry order
+        M->>P: getValidatorStats / getValidatorInfo / totalAmountStaked
+        M->>M: getNextValidator(): active? under maxValidatorPercentage? capacity?
+        M->>P: stake{value: min(remaining, capacity)}(validatorId)
+    end
+    M->>M: require(remaining == 0, "Insufficient capacity")
+    M-->>User: myPLUME balance = X
+```
+
+### Allocation rules (`_depositEther`, `getNextValidator`)
+
+1. Amounts below `minStake` are never sent to a validator; they are added to `currentWithheldETH` (this is the normal path for small reward top-ups).
+2. **Targeted deposit** (`validatorId != 0`): the validator must be active and have enough remaining capacity for the *entire* amount, otherwise the call reverts (`"Validator capacity exceeded"` / `"No capacity"`).
+3. **Round-robin deposit** (`validatorId == 0`): the registry is walked from index 0. A validator is skipped if it is inactive, if its share of *network-wide* stake after this deposit would exceed `maxValidatorPercentage[validatorId]` (when set), or if its remaining capacity is below `minStake`. Otherwise `min(remaining, capacity)` is staked and the loop continues. If any amount is left after the last validator, the whole transaction reverts.
+4. Validator capacity comes from `PlumeStaking.getValidatorInfo().maxCapacity`; a value of `0` means unlimited.
+5. `depositEtherPaused` blocks all staking (and, because `_rebalance` checks it too, every user-facing action).
+
+### Liquidity buffer
+
+`withholdRatio` (2%) of every deposit is kept in the minter as `currentWithheldETH`. This buffer:
+
+- funds **instant redemptions** (§5),
+- covers **deficits** when validators cannot absorb a queued unstake,
+- can be pushed to validators later by `REBALANCER_ROLE` via `stakeWitheldForValidator(amount, validatorId)` (which enforces `currentWithheldETH − amount ≥ totalInstantUnstaked`, i.e. never below what is already promised to pending instant withdrawals).
+
+---
+
+## 5. Unstaking and withdrawal
+
+Redemption is a two-step process: **unstake** (burn myPLUME, create a `WithdrawalRequest`) then **withdraw** (claim PLUME once the request's timestamp is reached).
 
 ```solidity
-function normalizedAmount(address user, uint256 amount) public view returns (uint256) {
-    return amount + userRewards[user].rewardsAccrued + _getCurrentUserYield(user, amount);
+struct WithdrawalRequest {
+    uint256 amount;            // portion sourced from validators (or buffer, on the instant path)
+    uint256 deficit;           // portion reserved from currentWithheldETH because validators could not cover it
+    uint256 timestamp;         // earliest time withdraw() succeeds
+    uint256 createdTimestamp;  // block.timestamp at creation; == timestamp ⇒ instant request
 }
+mapping(address => mapping(uint256 => WithdrawalRequest)) public withdrawalRequests;
+mapping(address => uint256) public withdrawalRequestCount;   // next request id for a user
 ```
 
-6. Reward Claiming
-Users claim rewards through unstakeRewards():
+### 5.1 Unstake entry points
+
+| Function | Who | Behaviour |
+|---|---|---|
+| `unstake(uint256 amount)` | holder | Burn `amount` myPLUME; source PLUME from the buffer or from validators in registry order. |
+| `unstakeFromValidator(uint256 amount, uint16 validatorId)` | holder | Same, but the validator portion must come from one specific validator (reverts if it cannot fulfil). |
+| `unstakeRewards()` | holder | Claim accrued rewards (§6.4). No burn; a withdrawal request for the reward amount is created through the same logic. |
+
+Both principal paths require `amount ≥ minStake`.
+
+### 5.2 Decision flow
+
+```mermaid
+flowchart TD
+    A["unstake(amount)"] --> B["_rebalance()<br/>burn myPLUME<br/>apply slashing haircut (§7)"]
+    B --> C{"currentWithheldETH ≥<br/>amount + totalInstantUnstaked ?"}
+
+    C -- yes --> I["INSTANT request<br/>timestamp = now<br/>totalInstantUnstaked += amount"]
+
+    C -- no --> D["for each validator<br/>(one, or registry order)"]
+    D --> E{"active and<br/>minter stake − queued > 0 ?"}
+    E -- no --> D
+    E -- yes --> F{"batch window<br/>already open?"}
+    F -- "no, and queued + take ≥<br/>withdrawalQueueThreshold" --> G["skip validator<br/>(targeted: revert 'Oversubscribed')"]
+    G --> D
+    F -- "yes (now ≥ nextBatchUnstakeTime)" --> H["_processBatchUnstake(v):<br/>PlumeStaking.unstake(v, queued)<br/>queued = 0<br/>nextBatch = now + 21d 1h"]
+    F -- "no, under threshold" --> J
+    H --> J["queued[v] += take<br/>amountUnstaked += take<br/>cooldownTs = max(cooldownTs,<br/>nextBatch[v] + plumeCooldown)"]
+    J --> K{remaining == 0 ?}
+    K -- no --> D
+    K -- "no more validators" --> L{"currentWithheldETH > 0 ?"}
+    L -- yes --> M["deficit = amount − amountUnstaked<br/>totalInstantUnstaked += deficit<br/>require ≤ currentWithheldETH"]
+    L -- no --> X["revert 'No funds left'"]
+    K -- yes --> N
+    M --> N["QUEUED request<br/>amount = amountUnstaked<br/>deficit = deficit<br/>timestamp = cooldownTs"]
+    I --> Z["store request at<br/>withdrawalRequestCount[user]++<br/>totalUnstaked += amount + deficit"]
+    N --> Z
+```
+
+**Reading the flow**
+
+- **Instant path** is taken only when the buffer can cover *both* this request and every instant/deficit amount already promised (`totalInstantUnstaked`). The request is immediately withdrawable.
+- **Queued path** walks validators. For each, the amount the minter can still pull is `stake − alreadyQueued`. The request's `timestamp` is the *latest* `nextBatchUnstakeTime + PlumeStaking.getCooldownInterval()` across the validators it touched — i.e. the time by which the batch containing this request will have been pushed to Plume *and* Plume's cooldown will have elapsed.
+- **Queue threshold.** Before a validator's batch window opens, at most `withdrawalQueueThreshold` (100,000 PLUME) may be queued against it. Round-robin unstakes simply skip a saturated validator; targeted unstakes revert.
+- **Deficit.** Any residual the validators cannot cover is earmarked from the buffer and paid at withdrawal time together with the validator portion.
+
+### 5.3 Batch processing
+
+`processBatchUnstake()` is **permissionless**. For every registered validator that is active and whose `nextBatchUnstakeTimePerValidator` has passed, it calls `PlumeStaking.unstake(validatorId, totalQueuedWithdrawalsPerValidator[validatorId])`, zeroes the queue and schedules the next window `batchUnstakeInterval` later. The same processing is triggered lazily inside `_unstake` when a user's request lands on a validator whose window is already open.
+
+```mermaid
+gantt
+    title Lifecycle of one validator's unstake queue (illustrative)
+    dateFormat  X
+    axisFormat  day %s
+    section Queue window
+    Requests accumulate (≤ withdrawalQueueThreshold)   :active, q, 0, 21
+    section Plume
+    processBatchUnstake → PlumeStaking.unstake(v, total) :milestone, m, 21, 0
+    Plume cooldown (getCooldownInterval)                 :c, 21, 28
+    Funds withdrawable via PlumeStaking.withdraw()       :milestone, w, 28, 0
+    section Next window
+    Requests accumulate                                  :q2, 21, 42
+```
+
+Governance can force-process a validator ahead of schedule with `unstakeGov(validatorId, extraAmount)`, which unstakes `queued + extraAmount` and resets the window; and can pull cooled funds into the buffer with `withdrawGov()`.
+
+### 5.4 Withdrawal
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant M as stPlumeMinter
+    participant P as PlumeStaking
+
+    User->>M: withdraw(recipient, id)
+    M->>M: _rebalance()
+    M->>M: require now ≥ request.timestamp and request.amount ≠ 0
+    alt Instant request (timestamp == createdTimestamp)
+        M->>M: total = amount + deficit
+        M->>M: require total ≤ currentWithheldETH and total ≤ totalInstantUnstaked
+        M->>M: fee = total × 0.5% → withHoldEth
+        M->>M: currentWithheldETH −= total, totalInstantUnstaked −= total
+        M->>User: transfer total − fee
+    else Queued request (standard)
+        M->>P: amountWithdrawable()
+        P-->>M: withdrawable
+        M->>M: require total ≤ withdrawable + totalInstantUnstaked
+        M->>M: fee = total × 0.015%
+        opt withdrawable ≠ 0 and total exceeds totalInstantUnstaked
+            M->>P: withdraw() — pulls ALL cooled PLUME owned by the minter
+            P-->>M: PLUME (receive() ignores PlumeStaking as sender)
+            M->>M: currentWithheldETH += withdrawn, totalInstantUnstaked += withdrawn
+        end
+        M->>M: if withdrawn falls short of amount, shortfall must be smaller than fee and is absorbed from the fee
+        M->>M: require totalInstantUnstaked ≥ total and totalInstantUnstaked ≤ currentWithheldETH
+        M->>M: currentWithheldETH −= total, totalInstantUnstaked −= total
+        M->>User: transfer total − fee
+    end
+    M->>M: totalUnstaked −= total, clear request
+```
+
+Notes:
+
+- `PlumeStaking.withdraw()` is *all-or-nothing* for the minter's cooled balance. Any PLUME pulled beyond the current request is parked in `currentWithheldETH` and mirrored in `totalInstantUnstaked`, so it is reserved for other pending withdrawals rather than being re-staked.
+- Fees on both paths accrue to `withHoldEth` and are collected by governance with `withdrawFee()`.
+- A user may hold several requests; each is addressed by its sequential `id` and can be withdrawn to any `recipient`.
+
+---
+
+## 6. Rewards mechanism
+
+### 6.1 Overview
+
+```mermaid
+flowchart LR
+    P["PlumeStaking<br/>accrues PLUME rewards<br/>to the minter"] -- "claim(nativeToken)<br/>via _rebalance / claim / claimAll" --> M1["stPlumeMinter<br/>_loadRewards(amount)"]
+    M1 -- "loadRewards{value: amount}" --> R["stPlumeRewards"]
+    R -- "10% YIELD_FEE<br/>addWithHoldFee()" --> FEE["stPlumeMinter.withHoldEth<br/>(protocol fee)"]
+    R -- "90% net<br/>plain transfer" --> M2["stPlumeMinter.receive()<br/>→ _depositEther(net, 0)<br/>restaked to validators"]
+    R -- "rewardRate = (net + leftover) / 7 days<br/>rewardsCycleEnd = now + 7 days" --> ACC["rewardPerToken accumulator"]
+    ACC -- "earned = bal × Δrpt / 1e18" --> H["myPLUME holders"]
+    H -- "unstakeRewards()" --> W["WithdrawalRequest<br/>for reward amount (§5)"]
+```
+
+### 6.2 Collection
+
+Rewards are pulled from Plume in native PLUME (`nativeToken = 0xEeee…EEeE`). Three routes exist:
+
+| Route | Trigger | Detail |
+|---|---|---|
+| `_rebalance()` | Automatically at the start of every user action (`submit`, `unstake`, `withdraw`, `unstakeRewards`) and admin action; also explicitly via `rebalance()` (`REBALANCER_ROLE`) | Calls `PlumeStaking.claim(nativeToken)` inside `try/catch` only if `getClaimableReward() ≥ minStake`. A revert on Plume's side never blocks the user's transaction. |
+| `claim(validatorId)` / `claimAll()` | `CLAIMER_ROLE` (keeper) | Direct claim from one validator or all. Non-native reward tokens from `claimAll()` remain in the minter to be handled by governance via `recoverERC20`. |
+| `loadRewards()` | governance, `payable` | Manual injection of PLUME as rewards (e.g. converted ERC-20 rewards or incentives). |
+
+Every route ends in `stPlumeMinter._loadRewards(amount)` → `stPlumeRewards.loadRewards{value: amount}()`.
+
+### 6.3 Distribution (Synthetix `StakingRewards`, adapted)
+
+`stPlumeRewards` uses the well-known `rewardPerToken` / `userRewardPerTokenPaid` accumulator, with myPLUME `totalSupply()` and `balanceOf()` as the staked-token quantities (no separate staking step is needed — holding myPLUME *is* being staked).
 
 ```solidity
-function unstakeRewards() external nonReentrant returns (uint256 yield) {
-    _rebalance();
-    yield = getUserRewards(msg.sender);
-    if(yield == 0){return 0;}
-    _unstake(yield, true, 0);
-    userRewards[msg.sender].rewardsAccrued = 0;
-    userRewards[msg.sender].rewardsBefore = getYield();
-    userRewards[msg.sender].lastCycleClaimed = cycleRewards.length;
-    require(getUserRewards(msg.sender) == 0, "Rewards should be reset after unstaking");
-    return yield;
-}
+// on every loadRewards()
+yieldAmount = reward × YIELD_FEE / 1e6;          // 10% → minter.withHoldEth
+netReward   = reward − yieldAmount;               // → minter, restaked
+if (now ≥ rewardsCycleEnd)  rewardRate = netReward / rewardsCycleLength;
+else                        rewardRate = (netReward + (rewardsCycleEnd − now) × rewardRate) / rewardsCycleLength;
+lastSync        = now;
+rewardsCycleEnd = now + rewardsCycleLength;       // 7 days
+
+// views
+rewardPerToken()  = rewardPerTokenStored + (lastTimeRewardApplicable() − lastSync) × rewardRate × 1e18 / totalSupply
+getUserRewards(u) = balanceOf(u) × (rewardPerToken() − userRewardPerTokenPaid[u]) / 1e18 + userRewards[u]
 ```
 
-7. Reward Flow Summary
-- Reward Collection: ETH rewards are collected from validators via PlumeStaking
-- Fee Extraction: A portion of rewards (10% by default) is taken as protocol fee
-- Cycle Management: Remaining rewards are added to the current cycle
-- Gradual Distribution: Rewards are linearly unlocked over the cycle period
-- User Accounting: When users interact with the contract, their rewards are accrued
-- Reward Claiming: Users can claim rewards by calling unstakeRewards()
+Properties:
 
-The system ensures that rewards are fairly distributed to frxETH token holders based on their balance and participation in the protocol, while maintaining the protocol's sustainability through fee collection.
+- **Linear streaming.** Each load restarts a 7-day cycle; unstreamed remainder from the previous cycle rolls into the new rate. Holders therefore see a smooth accrual rather than step changes.
+- **Exact pro-rata accounting.** `updateReward(account)` runs on `loadRewards`, on every myPLUME transfer/mint/burn (via `handleTokenTransfer`, `HANDLER_ROLE` = the token), and on `syncUser`. No holder can gain or lose accrued rewards by transferring tokens.
+- **Rewards are held as staked PLUME.** The net reward PLUME is sent back to the minter, whose `receive()` recognises the rewards contract as sender and calls `_depositEther(net, 0)`. The reward pool is therefore staked with validators (or, when below `minStake`, parked in the buffer) and earns further yield for the protocol until claimed.
+- **Fee bound.** `setYieldFee` caps `YIELD_FEE` at 50%. `setRewardsCycleLength` (1–365 days) may only change between cycles.
 
+### 6.4 Claiming rewards
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Holder
+    participant M as stPlumeMinter
+    participant R as stPlumeRewards
 
-## New Staking Scope
-You can find the codebase here: https://github.com/mystic-finance/Liquid-Staking/tree/staked-plume
+    Holder->>M: unstakeRewards()
+    M->>M: _rebalance()
+    M->>R: syncUser(holder) — checkpoint
+    M->>R: getUserRewards(holder)
+    R-->>M: yield
+    alt yield == 0
+        M-->>Holder: return 0
+    else
+        M->>M: _unstake(yield, rewards = true, 0)<br/>(no burn, no slashing haircut,<br/>instant or queued per §5.2)
+        M->>R: resetUserRewardsAfterClaim(holder)
+        M->>M: require(getUserRewards(holder) == 0)
+        M-->>Holder: WithdrawalRequest created — call withdraw(recipient, id) when due
+    end
+```
 
-The key components include:
-- Core contracts (~500 LOC) in src/: stPlumeMinter.sol, frxETH.sol, frxEthMinter.sol, and OperatorRegistry.sol
-- Withdrawal and rewards management script in automation/
-- Tests in tests/fork/ with main test of stPlumeMinter.t.sol
-- Deployment script in script/ with DeployMinter.s.sol as the main deployment file
+Because the reward PLUME is physically staked, a reward claim is fulfilled exactly like a principal redemption: from the buffer if liquidity allows (instant, 0.5% fee) or through the batched validator queue (standard, 0.015% fee).
 
-## v2 start point a3034e601bdd88ad166139e72a6d167922077550
+---
+
+## 7. Slashing
+
+Plume validators can be slashed. The protocol socialises any such loss across all holders rather than letting the first redeemers exit whole.
+
+- Governance records the loss with `setSlashedAmount(uint256)` (`onlyByOwnGov`). This is an accounting entry; the PLUME is already gone from the minter's validator stake.
+- On every **principal** unstake, after burning `amount` myPLUME:
+
+  ```solidity
+  S         = totalSupply() + amount;            // supply before this burn
+  newAmount = amount × (S − slashedAmount) / S;  // redeemer's pro-rata haircut
+  slashedAmount −= (amount − newAmount);         // loss absorbed so far
+  ```
+
+  The holder receives `newAmount` of PLUME for `amount` of myPLUME. Each redemption absorbs its share; when `slashedAmount` reaches 0 the haircut disappears.
+- Reward claims (`unstakeRewards`) are **not** haircut.
+- `MyPlumeFeed.getMyPlumePrice()` reflects the loss immediately, since it is derived from real backing (`PlumeStaking.stakeInfo` + buffer), not from `slashedAmount`.
+
+---
+
+## 8. Operator Registry (validator management)
+
+`OperatorRegistry` holds an **ordered array** of Plume validator IDs. The order matters: round-robin deposits and unstakes walk the array from index 0, so index 0 is the highest-priority validator for both inflows and outflows.
+
+```solidity
+struct Validator { uint256 validatorId; }
+Validator[] validators;
+```
+
+| Function | Access | Behaviour |
+|---|---|---|
+| `addValidator(Validator)` | owner / timelock | **Overridden in `stPlumeMinter`:** rejects duplicates and initialises `nextBatchUnstakeTimePerValidator[id] = now + PlumeStaking.getCooldownInterval()`. |
+| `addValidators(Validator[])` | owner / timelock | Batch add (calls the overridden `addValidator`). |
+| `swapValidator(from_idx, to_idx)` | owner / timelock | Reorder priority. |
+| `popValidators(times)` | owner / timelock | Remove from the end. |
+| `removeValidator(idx, dont_care_about_ordering)` | owner / timelock | Swap-and-pop (cheap) or order-preserving rebuild. |
+| `clearValidatorArray()` | owner / timelock | Empty the list. |
+| `numValidators()`, `getValidator(i)`, `getValidatorStruct(id)` | view | Introspection helpers. |
+| `setTimelock(address)` | owner / timelock | Rotate the timelock. |
+
+**Per-validator controls in `stPlumeMinter`**
+
+| State / setter | Meaning |
+|---|---|
+| `maxValidatorPercentage[id]` via `setMaxValidatorPercentage(id, pct)` (1e6 = 100%) | Upper bound on the validator's share of *total network stake* after a deposit; prevents the protocol from over-concentrating a single validator. `0` = no cap. |
+| `totalQueuedWithdrawalsPerValidator[id]` | PLUME queued for the next batch unstake. |
+| `nextBatchUnstakeTimePerValidator[id]` | When the next batch may be pushed to Plume. |
+| `restake(id, amount)` (`REBALANCER_ROLE`) | Move the minter's *cooling/parked* PLUME on Plume back into a validator without it leaving Plume. |
+| `stakeWitheldForValidator(amount, id)` (`REBALANCER_ROLE`) | Push buffer PLUME into a validator. |
+| `addFundsDirectly(id)` (`REBALANCER_ROLE`, `payable`) | Inject PLUME into a validator (or the buffer if `id == 0`) **without minting** — used to top up backing. |
+
+Removing a validator from the registry does **not** unstake from it; governance should `unstakeGov` / `withdrawGov` and `restake` as needed. Validity of a validator ID is not checked on-chain beyond `PlumeStaking` reverting on stake.
+
+---
+
+## 9. Periphery — MyPlumeFeed
+
+`MyPlumeFeed` is a stateless, view-only proxy contract that composes the numbers integrators and price feeds need. It reads `myPLUME`, `stPlumeMinter`, `stPlumeRewards` and `PlumeStaking` and never mutates state.
+
+| Function | Returns |
+|---|---|
+| `getMyPlumeTvl()` | `myPLUME.totalSupply()` — principal outstanding. |
+| `getTotalDeposits()` | Net PLUME backing = `staked + cooled + parked` (per `PlumeStaking.stakeInfo(minter)`) `+ currentWithheldETH − totalUnstaked − getMyPlumeRewards()`. Pending withdrawals and accrued-but-unclaimed rewards are excluded because they are owed, not backing. |
+| `getMyPlumePrice()` | `getTotalDeposits() × 1e18 / totalSupply()` — PLUME per myPLUME, 18 decimals. Expected ≈ `1e18`; lower after an unabsorbed slashing loss. |
+| `getPlumeStakedAmount()` | PLUME actively staked with validators. |
+| `getMyPlumeRewards()` | Total rewards streamed to holders so far: `rewardPerToken() × totalSupply() / 1e18`. |
+| `totalRewards()` | Streamed rewards plus the net (post-fee) rewards currently claimable from Plume but not yet loaded. |
+| `getEffectiveYield()` | `stPlumeRewards.getYield()` (= `rewardPerToken()`), a monotonically increasing per-token index for off-chain APR computation. |
+| `getMinterStats()` | Raw `PlumeStakingStorage.StakeInfo` for the minter (staked / cooled / parked). |
+| `getRedemptionFees()` | `(REDEMPTION_FEE, INSTANT_REDEMPTION_FEE)` in 1e6 precision. |
+| `getCurrentWithheldETH()`, `getTotalInstantUnstaked()` | Buffer size and the amount of it already promised. |
+| `getLiquidityRatio()` | `currentWithheldETH × 1e18 / getTotalDeposits()` — instant-redemption capacity as a share of backing. |
+
+**Guidance for oracle consumers.** `getMyPlumePrice()` is a fundamental (backing-based) price, not a market price. It moves only through (a) rounding of the withhold/fee arithmetic, (b) `addFundsDirectly` top-ups, and (c) slashing losses. A deviation materially below `1e18` should be treated as a signal that a loss has been recorded.
+
+---
+
+## 10. Fees and parameters
+
+All ratios use `RATIO_PRECISION = 1e6`.
+
+| Parameter | Contract | Default | Bounds / setter | Purpose |
+|---|---|---|---|---|
+| `withholdRatio` | minter | `20000` (2%) | ≤ 100%, `setWithholdRatio` (gov) | Share of each deposit kept liquid for instant redemptions. **Not a fee.** |
+| `YIELD_FEE` | rewards | `100000` (10%) | ≤ 50%, `setYieldFee` (admin) | Protocol take on staking rewards. |
+| `REDEMPTION_FEE` | minter | `150` (0.015%) | ≤ 100%, `setFees` (gov) | Fee on standard (queued) withdrawals. |
+| `INSTANT_REDEMPTION_FEE` | minter | `5000` (0.5%) | ≤ 100%, `setFees` (gov) | Fee on instant withdrawals from the buffer. |
+| `minStake` | minter | `0.1 PLUME` | ≥ `PlumeStaking.getMinStakeAmount()`, `setMinStake` (gov) | Minimum deposit / unstake; dust threshold for validator deposits and reward claims. |
+| `withdrawalQueueThreshold` | minter | `100,000 PLUME` | ≥ 1 PLUME, `setBatchUnstakeParams` (gov) | Max PLUME queued per validator before its batch window opens. |
+| `batchUnstakeInterval` | minter | `21 days + 1 hour` | 1 h – 365 d, `setBatchUnstakeParams` (gov) | Spacing between batch unstakes per validator. |
+| `rewardsCycleLength` | rewards | `7 days` | 1 – 365 d, between cycles only | Streaming period for each reward load. |
+| `maxValidatorPercentage[id]` | minter | `0` (none) | ≤ 100%, `setMaxValidatorPercentage` (gov) | Concentration cap per validator. |
+
+Protocol fee balance is `withHoldEth`; it is withdrawn to `owner` by `withdrawFee()` (gov).
+
+---
+
+## 11. Roles and access control
+
+```mermaid
+flowchart TB
+    subgraph gov["Governance — onlyByOwnGov (owner OR timelock)"]
+        g1["addValidator / addValidators<br/>removeValidator / swapValidator / popValidators / clearValidatorArray"]
+        g2["setFees / setMinStake / setBatchUnstakeParams<br/>setMaxValidatorPercentage / setWithholdRatio"]
+        g3["unstakeGov / withdrawGov / withdrawFee / loadRewards"]
+        g4["setSlashedAmount / setStPlumeRewards / setTimelock"]
+        g5["moveWithheldETH / recoverEther / recoverERC20"]
+    end
+    subgraph roles["stPlumeMinter — AccessControl roles"]
+        r0["DEFAULT_ADMIN_ROLE<br/>grants and revokes the roles below"]
+        r1["REBALANCER_ROLE<br/>rebalance · restake<br/>stakeWitheldForValidator · addFundsDirectly"]
+        r2["CLAIMER_ROLE<br/>claim · claimAll"]
+        r3["PAUSER_ROLE<br/>togglePauseSubmits · togglePauseDepositEther"]
+    end
+    subgraph rw["stPlumeRewards — AccessControl roles"]
+        w0["DEFAULT_ADMIN_ROLE<br/>setYieldFee · setRewardsCycleLength"]
+        w1["MINTER_ROLE — stPlumeMinter and keeper<br/>loadRewards · syncRewards · syncUser<br/>resetUserRewardsAfterClaim"]
+        w2["HANDLER_ROLE — myPLUME token<br/>handleTokenTransfer"]
+    end
+    subgraph tok["myPLUME token"]
+        t1["minters whitelist — stPlumeMinter<br/>minter_mint · minter_burn_from"]
+        t2["owner / timelock<br/>addMinter · removeMinter · updateStPlumeRewards"]
+    end
+    subgraph pub["Permissionless"]
+        p1["submit · submitAndGive · submitForValidator<br/>unstake · unstakeFromValidator · unstakeRewards<br/>withdraw · processBatchUnstake"]
+    end
+```
+
+Emergency powers worth noting for reviewers: `recoverEther` and `moveWithheldETH` (gov) can move PLUME out of the minter without accounting updates; `setSlashedAmount` is unbounded; `ProxyAdmin` can replace implementations. All are gated to the owner/timelock.
+
+Pausing: `submitPaused` stops new deposits only. `depositEtherPaused` stops staking **and**, because `_rebalance()` requires it to be false, stops every user-facing function — it is effectively a global pause.
+
+---
+
+## 12. Accounting model and invariants
+
+Balances tracked by the minter:
+
+| Variable | Meaning |
+|---|---|
+| `currentWithheldETH` | Liquid PLUME held by the minter that belongs to holders (buffer + cooled funds pulled from Plume + dust). |
+| `totalInstantUnstaked` | Portion of `currentWithheldETH` already promised to pending withdrawals (instant requests, deficits, and cooled funds pulled from Plume). |
+| `totalUnstaked` | Sum of all open `WithdrawalRequest` amounts (`amount + deficit`), across instant and queued. Subtracted from backing in the feed. |
+| `withHoldEth` | Protocol fee balance (yield fee + redemption fees). Not holder money. |
+| `slashedAmount` | Unabsorbed socialised loss. |
+| `totalQueuedWithdrawalsPerValidator[id]` | Queued but not yet pushed to Plume. |
+
+Invariants the code enforces or relies on:
+
+1. `totalInstantUnstaked ≤ currentWithheldETH` (checked in `_unstake`, `_withdraw`, `_stakeWitheldForValidator`).
+2. `address(this).balance ≥ currentWithheldETH + withHoldEth` (relied upon; `recoverEther` / `moveWithheldETH` are the only gov paths that can break it).
+3. `myPLUME.totalSupply() ≈ stakeInfo.staked + cooled + parked + currentWithheldETH − totalUnstaked − streamedRewards + slashedAmount` — i.e. the feed price ≈ 1 before slashing.
+4. A queued request's `timestamp` is never earlier than the moment its batch will have completed the Plume cooldown.
+5. Reward checkpoints are taken before every balance change of myPLUME, so `Σ getUserRewards ≤ rewards loaded − fees`.
+
+---
+
+## 13. Deployed addresses
+
+Plume mainnet, current production deployment ("Launched Mainnet" in `script/deployMinter.s.sol` and `script/deployPeriphery.s.sol`):
+
+| Contract | Address |
+|---|---|
+| myPLUME token (`frxETH.sol`) | `0xc2387E0feA344D1edEC3E93Bf2124f909f74938C` |
+| stPlumeMinter (proxy) | `0xAD8874006ee4EBe311066E47c650A74171b8F624` |
+| stPlumeRewards (proxy) | `0x6B9D6efF3f9B15b0655C5f5c2f27Fcc9A87f9087` |
+| MyPlumeFeed (proxy) | `0xFbb53aa72c10680e822e255aC70D10f8bb957D64` |
+| ProxyAdmin | `0x99E18E728497c4732b68D27417A8b7e4dcf70080` |
+| Timelock | `0x474302838E35DfC33967bA99AbbcB7560D48C634` |
+| PlumeStaking (Plume Network, external) | `0x30c791E4654EdAc575FA1700eD8633CB2FEDE871` |
+| Native token sentinel (`nativeToken`) | `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` |
+
+Registered validator IDs at deployment (priority order): `3, 9, 8, 5, 1`. The live list is `stPlumeMinter.getValidator(i)` for `i < numValidators()`.
+
+Earlier test deployments are listed as comments in the deploy scripts and are not in use.
+
+---
+
+## 14. Upgradeability
+
+- `stPlumeMinter`, `stPlumeRewards` and `MyPlumeFeed` are OpenZeppelin `TransparentUpgradeableProxy` instances administered by the shared `ProxyAdmin` above. Implementations disable initializers in their constructors.
+- Storage layouts reserve `__gap` slots in `OperatorRegistry` (10), `frxETHMinter` (10), `stPlumeMinter` (49) and `stPlumeRewards` (50).
+- `myPLUME` is **not** upgradeable; its only mutable wiring is the minter whitelist and the `stPlumeRewards` hook address.
+- Upgrade path: `script/upgradeMinter.s.sol` deploys a new implementation and calls `ProxyAdmin.upgrade`. Storage-compatibility is exercised by `test/fork/UpgradeTests.t.sol` against mainnet state.
+
+---
+
+## 15. Building and testing
+
+```bash
+git clone --recurse-submodules https://github.com/mystic-finance/Liquid-Staking.git
+cd Liquid-Staking && git checkout staked-plume
+forge install && forge build
+```
+
+Tests are fork tests against Plume mainnet (public RPC `https://rpc.plume.org`). The `Makefile` wraps the usual invocations:
+
+```bash
+make test-run-staked        # core minter suite       (StPlumeMinterForkTestMain)
+make test-run-myPlumeFeed   # periphery feed          (MyPlumeFeedForkTest)
+make test-run-operator      # operator registry       (OperatorRegistryForkTest)
+make test-run-upgrade       # proxy upgrade safety    (UpgradeTests)
+make test-run-all           # upgrade + operator + staked + feed
+```
+
+or directly:
+
+```bash
+forge test --mc StPlumeMinterForkTestMain --fork-url https://rpc.plume.org -vvv
+```
+
+Deployment and upgrade (`make deploy-minter`, `make deploy-periphery`, `make upgrade-minter`) run `script/deployMinter.s.sol`, `script/deployPeriphery.s.sol` and `script/upgradeMinter.s.sol` respectively via `forge script` with Blockscout verification against `https://explorer.plume.org`.
+
+Static analysis:
+
+```bash
+slither ./src/stPlumeMinter.sol --solc-remaps "openzeppelin-contracts=lib/openzeppelin-contracts openzeppelin-contracts-upgradeable=lib/openzeppelin-contracts-upgradeable solmate=lib/solmate/src"
+```
+
+---
+
+*Maintained by Mystic Finance. Contracts are licensed AGPL-3.0-only unless otherwise noted in the file header; Frax-derived components retain their original attribution.*
