@@ -32,9 +32,9 @@
 13. [Deployed addresses](#13-deployed-addresses)
 14. [Upgradeability](#14-upgradeability)
 15. [Building and testing](#15-building-and-testing)
-16. [Worked examples](#16-worked-examples)
-17. [Frequently asked questions](#17-frequently-asked-questions)
-18. [Glossary](#18-glossary)
+15A. [wMyPlume — wrapped, value-accruing token for DeFi integrations](#15a-wmyplume--wrapped-value-accruing-token-for-defi-integrations)
+16. [Frequently asked questions](#16-frequently-asked-questions)
+17. [Glossary](#17-glossary)
 
 ---
 
@@ -137,7 +137,6 @@ flowchart LR
 | `stPlumeRewards` | `src/stPlumeRewards.sol` | Upgradeable (proxy) | Synthetix `StakingRewards`-derived accumulator. Takes the protocol yield fee, streams net rewards over a 7-day cycle, tracks each holder's earned PLUME. |
 | `MyPlumeFeed` | `src/Periphery/MyPlumeFeed.sol` | Upgradeable (proxy), view-only | Read-only aggregator for integrators and oracles: price, TVL, staked amount, accrued rewards, liquidity ratio, fees. |
 | `IPlumeStaking` / `PlumeStakingStorage` | `src/interfaces/` | Interfaces | ABI of the external Plume Network staking contract. |
-| `stPlumeRewardsLegacy`, `sfrxETH`, `DepositContract` | `src/` | Not in use | Retained for history / tests. `sfrxETH` (ERC-4626 vault) is **not deployed** on Plume. |
 
 ### Inheritance
 
@@ -643,6 +642,7 @@ Plume mainnet, current production deployment ("Launched Mainnet" in `script/depl
 | stPlumeMinter (proxy) | `0xAD8874006ee4EBe311066E47c650A74171b8F624` |
 | stPlumeRewards (proxy) | `0x6B9D6efF3f9B15b0655C5f5c2f27Fcc9A87f9087` |
 | MyPlumeFeed (proxy) | `0xFbb53aa72c10680e822e255aC70D10f8bb957D64` |
+| wmyPLUME token (`sfrxETH.sol`) | `0x3d1d2E5ea5608b25C1Daae207cD3dF1E75B17835` |
 | ProxyAdmin | `0x99E18E728497c4732b68D27417A8b7e4dcf70080` |
 | Timelock | `0x474302838E35DfC33967bA99AbbcB7560D48C634` |
 | PlumeStaking (Plume Network, external) | `0x30c791E4654EdAc575FA1700eD8633CB2FEDE871` |
@@ -694,6 +694,85 @@ Static analysis:
 ```bash
 slither ./src/stPlumeMinter.sol --solc-remaps "openzeppelin-contracts=lib/openzeppelin-contracts openzeppelin-contracts-upgradeable=lib/openzeppelin-contracts-upgradeable solmate=lib/solmate/src"
 ```
+
+---
+
+## 15A. wMyPlume — wrapped, value-accruing token for DeFi integrations
+
+> **In plain terms.** myPLUME pays rewards to *whoever holds it*. When it sits inside another protocol — a Morpho market, an Algebra pool — that protocol is the holder, and it has no way to claim. wMyPlume fixes this the same way Lido's wstETH and Frax's sfrxETH do: you put myPLUME into a vault and get a share token whose *price* rises as rewards come in. Lending markets and DEX pools hold wMyPlume, so the yield is never lost.
+
+### Why raw myPLUME is unsuitable as collateral
+
+`stPlumeRewards` credits rewards to `balanceOf(holder)` ([stPlumeRewards.sol:97-100](src/stPlumeRewards.sol#L97-L100)) and the only claim path is `unstakeRewards()` by the holder itself. A Morpho market or DEX pool never calls it, so:
+
+- the depositor stops earning the moment they post collateral or LP;
+- the rewards accrue to the integrator's address and cannot be claimed by anyone.
+
+This is the same property frxETH has (frxETH in Curve earns nothing; yield is routed to sfrxETH) and the same reason Morpho lists wstETH rather than stETH. Every liquid staking token in DeFi that does not carry yield in its price is used through a value-accruing wrapper — stETH→wstETH, eETH→weETH, frxETH→sfrxETH, OETH→wOETH, USDe→sUSDe.
+
+### The contract
+
+[`src/sfrxETH.sol`](src/sfrxETH.sol) is Frax's audited `sfrxETH` vault — an `xERC4626` over myPLUME — **unmodified except for the token name and symbol** (diffed line-by-line against `FraxFinance/frxETH-public` master; `lib/ERC4626` is byte-identical to the pinned upstream `corddry/ERC4626`). It is deployed non-upgradeable by [`script/deployWrapped.s.sol`](script/deployWrapped.s.sol), which seeds it with 10 myPLUME and **burns the seed shares to `0x…dEaD`** so the vault can never return to a zero-supply state.
+
+`xERC4626` is what makes the vault safe as an oracle input:
+
+- `totalAssets()` uses **internal accounting** (`storedTotalAssets`), not `balanceOf`. Tokens sent to the vault are ignored until `syncRewards()` is called — which is only possible once a cycle has ended — and then unlock **linearly** over the next cycle.
+- The share price is therefore monotonic, moves slowly, and **cannot be flash-moved by a donation**, closing both the yield-sandwich attack and the oracle-manipulation attack a `balanceOf`-based vault would be exposed to.
+- The `andSync` modifier calls `syncRewards()` automatically on any deposit/mint/withdraw/redeem once a cycle has expired, so users never hit a revert.
+- myPLUME's `balanceOf` never decreases (slashing is applied at unstake, not on the token), so the vault's assumption that its balance only grows via deposits and rewards always holds.
+
+`rewardsCycleLength` is immutable and set to **7 days** at deployment.
+
+### How yield reaches the vault
+
+The PLUME behind the vault's rewards is **already inside `stPlumeMinter`** — `_loadRewards` sends net rewards to the minter, which restakes them. So the recycle does not move any PLUME at all. It converts a *reward* claim into a *principal* claim on the same pile:
+
+| Step | myPLUME supply `S` | Reward ledger `R` | Protocol PLUME `P` |
+|---|---|---|---|
+| Before | `S` | `R` | `P` |
+| `resetUserRewardsAfterClaim(vault)` | `S` | `R − owed` | `P` |
+| `minter_mint(vault, owed)` | `S + owed` | `R − owed` | `P` |
+
+Total claims are `S + R` before and `(S + owed) + (R − owed)` after — **identical**, with `P` untouched. Backing stays exactly 1:1 and there is no surplus to reconcile and no reserve to top up.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant K as Keeper
+    participant R as stPlumeRewards
+    participant T as Timelock (24h)
+    participant P as myPLUME token
+    participant V as wMyPlume vault
+    K->>R: getUserRewards(vault) → owed
+    K->>T: schedule( myPLUME.minter_mint(vault, owed) )
+    K->>R: resetUserRewardsAfterClaim(vault)
+    Note over K,T: 24 hour delay — the multisig can cancel in this window
+    K->>T: execute( myPLUME.minter_mint(vault, owed) )
+    T->>P: minter_mint(vault, owed)
+    P->>V: owed myPLUME minted to the vault
+    K->>V: syncRewards() once the vault cycle has ended
+    Note over V: share price rises linearly over the next 7 days
+```
+
+The keeper is [`management/recycleVaultRewards.js`](management/recycleVaultRewards.js) (`npm run recycle`), a long-running process in the same style as `manageWithdrawals.js`. Every hour it runs three tasks, in this order:
+
+| Task | What it does | Requires |
+|---|---|---|
+| **C — executeRecycle** | Once the 24 h delay has passed, `timelock.execute(minter_mint(vault, owed))`. The mint happens inside that one transaction, so there is no second step that can fail halfway. | `EXECUTOR_ROLE` on the timelock |
+| **A — syncVault** | `vault.syncRewards()` if the vault cycle has ended. Runs **after** Task C, because `syncRewards` only measures the vault balance at the instant it runs and can only run once per cycle — syncing first would leave a fresh mint unrecognised for a whole cycle. | Permissionless |
+| **B — proposeRecycle** | Schedules `minter_mint(vault, owed)` on the timelock, then calls `resetUserRewardsAfterClaim(vault)`. Skipped entirely while an operation is pending — that guard is what throttles the loop to roughly one recycle per 24 h. | `PROPOSER_ROLE` on the timelock, `MINTER_ROLE` on `stPlumeRewards` |
+
+Running hourly rather than daily means a finished 7-day cycle is unlocked within an hour, and a ready timelock operation is executed within an hour. There are no in-process timers, so a restart loses nothing; the one pending operation is recorded in `management/vault-recycle-pending.json`.
+
+**Why the reset happens at propose time.** Timelock calldata is fixed when scheduled, so the mint amount must be known 24 h in advance. Resetting at execute time would zero the 24 h of accrual built up in the meantime while minting only the older, smaller amount — losing roughly half of every cycle. Resetting at propose loses nothing: the vault accrues from zero again and that accrual is picked up by the next recycle.
+
+
+### Integrations
+
+- **Morpho.** Collateral = wMyPlume. Oracle = Morpho's standard `MorphoChainlinkOracleV2` — the same configuration as wstETH / sfrxETH / weETH markets. No custom oracle code. Because `convertToAssets()` is monotonic and donation-proof, the price cannot be manipulated within a block. Note the oracle treats myPLUME as 1 PLUME, so an unabsorbed slashing loss (§7) is not reflected in it and must be covered by the LLTV buffer.
+- **Algebra.** Pools are created on **wMyPlume/PLUME**, not myPLUME/PLUME. LPs earn staking yield through the share price; no farming module or off-chain distribution is needed.
+- **Pendle (when available on Plume).** wMyPlume is a standard ERC-4626, so Pendle's SY template applies directly; PT-wMyPlume is then a zero-coupon collateral with no yield question at all.
+- **Raw myPLUME held in contracts** earns nothing by policy (the frxETH stance); integrators are directed to wMyPlume.
 
 ---
 

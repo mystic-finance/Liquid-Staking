@@ -23,3 +23,7 @@ deploy-splitter:; forge script script/deployFeeSplitter.s.sol:Deploy --rpc-url h
 deploy-minter-continue:; forge script script/deployMinter.s.sol:Deploy --rpc-url https://rpc.plume.org --broadcast --verify --verifier blockscout --verifier-url https://explorer.plume.org/api? --account deployer --sender 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c --delay 5 -vvvv --resume 
 
 deploy-periphery:; forge script script/deployPeriphery.s.sol:Deploy --rpc-url https://rpc.plume.org --broadcast --verify --verifier blockscout --verifier-url https://explorer.plume.org/api? --account deployer --sender 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c --delay 5 -vvvv 
+
+deploy-wrapped:; forge script script/deployWrapped.s.sol:Deploy --rpc-url https://rpc.plume.org --broadcast --verify --verifier blockscout --verifier-url https://explorer.plume.org/api? --account deployer --sender 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c --delay 5 -vvvv
+
+wire-wrapped:; forge script script/wireWrapped.s.sol:Wire --rpc-url https://rpc.plume.org --broadcast --account deployer --sender 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c -vvvv
