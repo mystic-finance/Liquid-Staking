@@ -35,8 +35,8 @@ require("dotenv").config();
 //
 //   Task B  proposeRecycle   ONLY if nothing is pending:
 //                              owed = stPlumeRewards.getUserRewards(vault)
-//                              timelock.schedule( myPLUME.minter_mint(vault, owed) )
 //                              stPlumeRewards.resetUserRewardsAfterClaim(vault)
+//                              timelock.schedule( myPLUME.minter_mint(vault, owed) )
 //                            The "nothing is pending" guard throttles the loop: a new
 //                            recycle only starts on the first tick after Task C finished
 //                            the last, so roughly every 24h, set by the timelock delay.
@@ -62,20 +62,21 @@ require("dotenv").config();
 //  There are no in-process timers: everything is driven by the hourly tick, so a restart
 //  loses nothing.
 //
-//  TWO FAILURE MODES, AND WHY THE ORDER IS SCHEDULE-THEN-RESET:
+//  WHY THE ORDER IS RESET-THEN-SCHEDULE:
 //
-//   * Reset lands, mint never does  -> the vault's rewards are gone for good. So the
-//     scheduled operation is recorded in PENDING_FILE and retried every tick until it
-//     executes. Never delete PENDING_FILE while a recycle is in flight, and never cancel a
-//     scheduled recycle without re-issuing the same mint.
+//   * Mint scheduled, reset never did -> would mint `amount` myPLUME while still owing
+//     `amount` on the ledger, counting the same PLUME twice and leaving the protocol
+//     under-backed. Resetting first makes that state UNREACHABLE: a mint can only be
+//     scheduled after the reset has landed.
 //
-//   * Mint lands, reset never did   -> WORSE: the protocol mints `amount` myPLUME while
-//     still owing `amount` on the ledger, double-counting the same PLUME and leaving itself
-//     under-backed. Task C therefore refuses to execute unless `resetDone` is true, retrying
-//     the reset first. A scheduled-but-unexecuted mint is harmless, so stalling is safe.
+//   * Reset landed, schedule failed   -> recoverable. The amount and salt are written to
+//     PENDING_FILE before anything is sent, and Task C reconciles against the chain.
+//     Even unrecovered this is a fairness loss (the vault's rewards become surplus backing
+//     shared by all holders), not a solvency break.
 //
-//  Scheduling first is deliberate: resetting first would mean a failed schedule leaves the
-//  ledger cleared with no mint on the books, which is the unrecoverable case.
+//  Once scheduled, the mint MUST eventually execute or the vault's rewards are lost, so the
+//  record is retried every tick. Never delete PENDING_FILE while a recycle is in flight, and
+//  never cancel a scheduled recycle without re-issuing the same mint.
 //
 //  Dry run:  DRY_RUN=true node recycleVaultRewards.js
 //  It performs every read and every safety check and logs the transactions it would send,
@@ -301,13 +302,11 @@ async function sendTransaction(description, sendFn) {
 //
 //  Saved to disk so a restart resumes where it left off.
 //
-//  `resetDone` is the safety interlock. The scheduled mint must NEVER be executed unless the
-//  vault's reward ledger has been cleared, otherwise the protocol would mint `amount` myPLUME
-//  while still owing `amount` on the ledger — double-counting the same PLUME and leaving the
-//  protocol under-backed. A scheduled-but-unexecuted mint is harmless, so when the reset
-//  fails we simply stall and retry rather than trying to unwind.
+//  `resetDone` and `scheduled` record how far a proposal got. `scheduled: true` implies
+//  `resetDone: true`, because Task B only schedules after the reset has landed.
 //
-//  Shape: { amount: "<wei>", salt: "0x..", readyAt: <unix seconds>, resetDone: bool }
+//  Shape: { amount: "<wei>", salt: "0x..", readyAt: <unix seconds>|null,
+//           resetDone: bool, scheduled: bool }
 // ---------------------------------------------------------------------------
 
 // Returns null ONLY when there is genuinely no pending recycle. A corrupt or unreadable
@@ -422,17 +421,12 @@ async function executeRecycle() {
       return;
     }
 
-    // SAFETY INTERLOCK. Minting without having cleared the ledger would leave the protocol
-    // owing the same PLUME twice. If the reset failed in Task B, retry it here and only
-    // proceed once it has landed. Failing that, stall — an unexecuted mint is harmless.
+    // Belt and braces. Task B only schedules after the reset has landed, so this should
+    // always be true; refuse to mint if it somehow is not.
     if (!pending.resetDone) {
-      log("WARN", "Task C: the vault ledger was not cleared when this recycle was proposed. Retrying the reset before minting.");
-      await clearVaultLedger(amount);
-      if (!readPending()?.resetDone && !dryRun) {
-        log("ERROR", "Task C: ledger still not cleared. NOT executing the mint. " +
-                     "If this cannot be resolved, have the multisig cancel the scheduled operation.");
-        return;
-      }
+      log("ERROR", "Task C: a mint is scheduled but the ledger was never cleared. NOT executing. " +
+                   "Have the multisig cancel the scheduled operation.");
+      return;
     }
 
     await sendTransaction(
@@ -494,17 +488,18 @@ async function proposeRecycle() {
       return;
     }
 
-    // Schedule the mint FIRST. If this fails the ledger is untouched and we simply try
-    // again next tick. Clearing the ledger first would risk wiping it with no mint booked.
     const salt = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(`wMyPlume-recycle-${Date.now()}`));
     const op = mintOperation(owed, salt);
     const delay = Number(await timelockContract.getMinDelay());
 
-    // Record the salt BEFORE sending. sendTransaction can throw on a transaction that
-    // actually landed (see its "no receipt" path), and an unrecorded salt would leave a
-    // scheduled mint orphaned on the timelock — executable later with no matching reset.
-    // Task C reconciles `scheduled: false` against isOperation() on the chain.
-    writePending({ amount: owed.toString(), salt, readyAt: null, scheduled: false, resetDone: false });
+    // Record the amount and salt BEFORE sending anything, so nothing is lost if a
+    // transaction lands but we do not see the receipt.
+    writePending({ amount: owed.toString(), salt, readyAt: null, resetDone: false, scheduled: false });
+
+    // Clear the ledger FIRST, then schedule. A mint can then only ever be scheduled against
+    // an already cleared ledger, which makes the under-backed state unreachable instead of
+    // something an interlock has to catch.
+    await clearVaultLedger(owed);
 
     await sendTransaction(
       `timelock.schedule(myPLUME.minter_mint(vault, ${plume(owed)} PLUME))`,
@@ -512,12 +507,7 @@ async function proposeRecycle() {
     );
 
     const readyAt = (await chainNow()) + delay;
-    writePending({ amount: owed.toString(), salt, readyAt, scheduled: true, resetDone: false });
-
-    // Now clear the ledger. The minted amount is fixed at `owed`; whatever the vault accrues
-    // from here belongs to the next recycle, so resetting now loses nothing.
-    // If this fails, Task C will retry it and will refuse to execute the mint until it lands.
-    await clearVaultLedger(owed);
+    writePending({ amount: owed.toString(), salt, readyAt, resetDone: true, scheduled: true });
 
     log("INFO", `Task B: mint can be executed after ${asDate(readyAt)}. Task C picks it up on the next tick after that.`);
   } catch (error) {
