@@ -1,10 +1,12 @@
 {
   "name": "stplume-automation",
   "version": "1.0.0",
-  "description": "Keeper script to manage stPlumeMinter batch unstaking and reward syncing.",
+  "description": "Keeper scripts: stPlumeMinter batch unstaking / reward syncing, and wMyPlume vault reward recycling.",
   "main": "manageWithdrawals.js",
   "scripts": {
-    "start": "node manageWithdrawals.js"
+    "start": "node manageWithdrawals.js",
+    "recycle": "node recycleVaultRewards.js",
+    "recycle:dry": "DRY_RUN=true node recycleVaultRewards.js"
   },
   "author": "",
   "license": "ISC",
