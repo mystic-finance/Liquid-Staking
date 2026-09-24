@@ -648,8 +648,6 @@ Plume mainnet, current production deployment ("Launched Mainnet" in `script/depl
 | PlumeStaking (Plume Network, external) | `0x30c791E4654EdAc575FA1700eD8633CB2FEDE871` |
 | Native token sentinel (`nativeToken`) | `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` |
 
-Registered validator IDs at deployment (priority order): `3, 9, 8, 5, 1`. The live list is `stPlumeMinter.getValidator(i)` for `i < numValidators()`.
-
 Earlier test deployments are listed as comments in the deploy scripts and are not in use.
 
 ---

@@ -18,6 +18,8 @@ deploy-minter:; forge script script/deployMinter.s.sol:Deploy --rpc-url https://
 
 upgrade-minter:; forge script script/upgradeMinter.s.sol:Deploy --rpc-url https://rpc.plume.org --broadcast --verify --verifier blockscout --verifier-url https://explorer.plume.org/api? --account deployer --sender 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c --delay 5 -vvvv 
 
+upgrade-feed:; forge script script/upgradeFeed.s.sol:Deploy --rpc-url https://rpc.plume.org --broadcast --verify --verifier blockscout --verifier-url https://explorer.plume.org/api? --account deployer --sender 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c --delay 5 -vvvv 
+
 deploy-splitter:; forge script script/deployFeeSplitter.s.sol:Deploy --rpc-url https://rpc.plume.org --broadcast --verify --verifier blockscout --verifier-url https://explorer.plume.org/api? --account deployer --sender 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c --delay 5 -vvvv 
 
 deploy-minter-continue:; forge script script/deployMinter.s.sol:Deploy --rpc-url https://rpc.plume.org --broadcast --verify --verifier blockscout --verifier-url https://explorer.plume.org/api? --account deployer --sender 0x18E1EEC9Fa5D77E472945FE0d48755386f28443c --delay 5 -vvvv --resume 

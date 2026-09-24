@@ -45,8 +45,15 @@ contract MyPlumeFeed is Initializable{
 
     function getTotalDeposits() public view returns (uint256) {
         PlumeStakingStorage.StakeInfo memory info = plumeStaking.stakeInfo(address(stPlumeMinter));
-        uint256 plumeOwned = info.staked + info.cooled + info.parked;
-        return plumeOwned + stPlumeMinter.currentWithheldETH() - stPlumeMinter.totalUnstaked() - getMyPlumeRewards();
+        uint256 assets = info.staked + info.cooled + info.parked + stPlumeMinter.currentWithheldETH();
+        uint256 pending = stPlumeMinter.totalUnstaked();
+        uint256 backing = assets > pending ? assets - pending : 0;
+
+        uint256 supply = myPlume.totalSupply();
+        uint256 slashed = stPlumeMinter.slashedAmount();
+        uint256 principal = supply > slashed ? supply - slashed : 0;
+
+        return backing < principal ? backing : principal;
     }
     
     function getMyPlumePrice() public view returns (uint256) {
