@@ -193,7 +193,7 @@ classDiagram
 - **Burning** happens only in `stPlumeMinter._unstake()` when a holder redeems.
 - **No rebasing, no exchange rate.** `balanceOf` never changes on its own. A holder's yield is `stPlumeRewards.getUserRewards(holder)`, denominated in PLUME, and is claimed via `stPlumeMinter.unstakeRewards()`.
 - **Transfer hook.** `frxETH._beforeTokenTransfer` calls `stPlumeRewards.handleTokenTransfer(from)` and `handleTokenTransfer(to)` (skipping the zero address and the token itself). This checkpoints both parties' `rewardPerToken` *before* balances change, which is what makes the Synthetix accounting exact under transfers, mints and burns.
-- **Reference price.** Because principal is 1:1, the fair price reported by `MyPlumeFeed.getMyPlumePrice()` is the protocol's net PLUME backing divided by supply and is expected to sit at ≈ 1.0 PLUME, moving below 1.0 only if a slashing loss has been recorded and not yet fully absorbed.
+- **Reference price.** Because principal is 1:1, `MyPlumeFeed.getMyPlumePrice()` reports what a redemption pays: 1.0 PLUME in normal operation, falling to `(supply − slashedAmount) / supply` once a slashing loss is recorded, and capped by the protocol's net backing (§9).
 
 ---
 
@@ -483,7 +483,8 @@ Plume validators can be slashed. The protocol socialises any such loss across al
 
   The holder receives `newAmount` of PLUME for `amount` of myPLUME. Each redemption absorbs its share; when `slashedAmount` reaches 0 the haircut disappears.
 - Reward claims (`unstakeRewards`) are **not** haircut.
-- `MyPlumeFeed.getMyPlumePrice()` reflects the loss immediately, since it is derived from real backing (`PlumeStaking.stakeInfo` + buffer), not from `slashedAmount`.
+- `MyPlumeFeed.getMyPlumePrice()` reflects the loss as soon as `setSlashedAmount` is called, because its principal term is `supply − slashedAmount`. Before that, it can only see the loss once Plume's `adminClearValidatorRecord` has removed the slashed stake from `stakeInfo`, since the feed also caps the price at real backing. Until one of the two happens, the feed and the minter both still price myPLUME at 1.0, so record the loss promptly.
+- Size `slashedAmount` to the loss borne by current holders (exclude any queued requests being reimbursed separately), and keep it below `totalSupply()`. A value at or above supply makes `S − slashedAmount` underflow and every principal unstake revert.
 
 ---
 
@@ -533,18 +534,18 @@ Removing a validator from the registry does **not** unstake from it; governance 
 | Function | Returns |
 |---|---|
 | `getMyPlumeTvl()` | `myPLUME.totalSupply()` — principal outstanding. |
-| `getTotalDeposits()` | Net PLUME backing = `staked + cooled + parked` (per `PlumeStaking.stakeInfo(minter)`) `+ currentWithheldETH − totalUnstaked − getMyPlumeRewards()`. Pending withdrawals and accrued-but-unclaimed rewards are excluded because they are owed, not backing. |
-| `getMyPlumePrice()` | `getTotalDeposits() × 1e18 / totalSupply()` — PLUME per myPLUME, 18 decimals. Expected ≈ `1e18`; lower after an unabsorbed slashing loss. |
+| `getTotalDeposits()` | PLUME backing myPLUME principal = `min(backing, principal)`, where `backing = staked + cooled + parked` (per `PlumeStaking.stakeInfo(minter)`) `+ currentWithheldETH − totalUnstaked` and `principal = totalSupply() − slashedAmount`. `backing` still includes rewards owed to holders, so in normal operation the result is `principal`; it drops below that only if the backing shows a loss that has not been recorded. |
+| `getMyPlumePrice()` | `getTotalDeposits() × 1e18 / totalSupply()` — PLUME per myPLUME, 18 decimals. `1e18` in normal operation; the redemption rate after a recorded slashing loss. |
 | `getPlumeStakedAmount()` | PLUME actively staked with validators. |
-| `getMyPlumeRewards()` | Total rewards streamed to holders so far: `rewardPerToken() × totalSupply() / 1e18`. |
-| `totalRewards()` | Streamed rewards plus the net (post-fee) rewards currently claimable from Plume but not yet loaded. |
+| `getMyPlumeRewards()` | `rewardPerToken() × totalSupply() / 1e18`. This is a cumulative index times current supply, **not** the rewards currently owed: claimed rewards stay in it and supply changes skew it. Informational only; not used in pricing. |
+| `totalRewards()` | `getMyPlumeRewards()` plus the net (post-fee) rewards currently claimable from Plume but not yet loaded. Same caveat as `getMyPlumeRewards()`. |
 | `getEffectiveYield()` | `stPlumeRewards.getYield()` (= `rewardPerToken()`), a monotonically increasing per-token index for off-chain APR computation. |
 | `getMinterStats()` | Raw `PlumeStakingStorage.StakeInfo` for the minter (staked / cooled / parked). |
 | `getRedemptionFees()` | `(REDEMPTION_FEE, INSTANT_REDEMPTION_FEE)` in 1e6 precision. |
 | `getCurrentWithheldETH()`, `getTotalInstantUnstaked()` | Buffer size and the amount of it already promised. |
 | `getLiquidityRatio()` | `currentWithheldETH × 1e18 / getTotalDeposits()` — instant-redemption capacity as a share of backing. |
 
-**Guidance for oracle consumers.** `getMyPlumePrice()` is a fundamental (backing-based) price, not a market price. It moves only through (a) rounding of the withhold/fee arithmetic, (b) `addFundsDirectly` top-ups, and (c) slashing losses. A deviation materially below `1e18` should be treated as a signal that a loss has been recorded.
+**Guidance for oracle consumers.** `getMyPlumePrice()` is the redemption price, not a market price, and it never exceeds `1e18`. It moves only through slashing: a recorded loss (`setSlashedAmount`), or a loss visible in `stakeInfo` that exceeds the reward cushion before it is recorded. Reward claims, reward recycling into wMyPlume and supply changes do not move it. A deviation below `1e18` should be treated as a signal that a loss has occurred. To price wMyPlume, multiply by the vault's `pricePerShare()` (§15A).
 
 ---
 
@@ -764,10 +765,33 @@ Running hourly rather than daily means a finished 7-day cycle is unlocked within
 
 **Why the reset happens at propose time.** Timelock calldata is fixed when scheduled, so the mint amount must be known 24 h in advance. Resetting at execute time would zero the 24 h of accrual built up in the meantime while minting only the older, smaller amount — losing roughly half of every cycle. Resetting at propose loses nothing: the vault accrues from zero again and that accrual is picked up by the next recycle.
 
+### Pricing wMyPlume against wPLUME
+
+wPLUME is PLUME wrapped 1:1, so the price of wMyPlume in wPLUME is its price in PLUME:
+
+```
+wMyPlume / wPLUME = vault.pricePerShare() × MyPlumeFeed.getMyPlumePrice() / 1e18
+```
+
+- `pricePerShare()` (= `convertToAssets(1e18)`) is myPLUME per share. It carries the yield.
+- `getMyPlumePrice()` is PLUME per myPLUME: `min(backing, supply − slashedAmount) / supply`. It is `1e18` in normal operation and falls to the redemption rate once a slashing loss is recorded with `setSlashedAmount` (§7), so a slash reaches the collateral price.
+
+**Right after yield arrives.** The price does not jump when the reward is minted. Take a vault holding 1,000 myPLUME against 1,000 shares, and a recycle that mints 10 myPLUME of rewards:
+
+| Moment | `totalAssets()` | `pricePerShare()` | wMyPlume / wPLUME |
+|---|---|---|---|
+| Before the recycle | 1,000 | 1.000 | 1.000 |
+| `minter_mint(vault, 10)` executes | 1,000 (the 10 is ignored until `syncRewards`) | 1.000 | 1.000 |
+| `syncRewards()` at the cycle boundary | 1,000, with 10 queued | 1.000 | 1.000 |
+| 3.5 days into the cycle | 1,005 | 1.005 | 1.005 |
+| Cycle end (7 days) | 1,010 | 1.010 | 1.010 |
+
+Between the mint and the next `syncRewards()` the new myPLUME sits in the vault uncounted. From the sync onward it unlocks linearly, so the price rises by `owed / totalSupply` across one 7-day cycle. `getMyPlumePrice()` stays at `1e18` throughout: the recycle turns reward claims into principal on PLUME the minter already holds (see the table above), so backing still covers supply.
+
 
 ### Integrations
 
-- **Morpho.** Collateral = wMyPlume. Oracle = Morpho's standard `MorphoChainlinkOracleV2` — the same configuration as wstETH / sfrxETH / weETH markets. No custom oracle code. Because `convertToAssets()` is monotonic and donation-proof, the price cannot be manipulated within a block. Note the oracle treats myPLUME as 1 PLUME, so an unabsorbed slashing loss (§7) is not reflected in it and must be covered by the LLTV buffer.
+- **Morpho.** Collateral = wMyPlume. Oracle = Morpho's standard `MorphoChainlinkOracleV2` — the same configuration as wstETH / sfrxETH / weETH markets. No custom oracle code. Because `convertToAssets()` is monotonic and donation-proof, the price cannot be manipulated within a block. With only the vault conversion configured, the oracle treats myPLUME as 1 PLUME, so a recorded slashing loss (§7) is not reflected in it and must be covered by the LLTV buffer. To reflect it, add `MyPlumeFeed.getMyPlumePrice()` as the myPLUME→PLUME leg (see "Pricing wMyPlume against wPLUME" above). The feed does not expose the Chainlink `AggregatorV3Interface`.
 - **Algebra.** Pools are created on **wMyPlume/PLUME**, not myPLUME/PLUME. LPs earn staking yield through the share price; no farming module or off-chain distribution is needed.
 - **Pendle (when available on Plume).** wMyPlume is a standard ERC-4626, so Pendle's SY template applies directly; PT-wMyPlume is then a zero-coupon collateral with no yield question at all.
 - **Raw myPLUME held in contracts** earns nothing by policy (the frxETH stance); integrators are directed to wMyPlume.
